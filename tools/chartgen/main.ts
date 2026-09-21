@@ -141,6 +141,13 @@ async function main() {
         '  (센 타격만 남기고 스냅 안 함)',
     )
   else console.log('  박자 흐린 구간 없음')
+  const trip = a.grid.tripletSpans()
+  if (trip.length)
+    console.log(
+      `  셋잇단 구간 ${trip.reduce((s, [x, y]) => s + (y - x), 0).toFixed(0)}s — ` +
+        trip.map(([x, y]) => `${x.toFixed(0)}~${y.toFixed(0)}s`).join(', ') +
+        '  (12분음표 격자로 스냅)',
+    )
 
   if (args.dump) {
     mkdirSync(WORK, { recursive: true })

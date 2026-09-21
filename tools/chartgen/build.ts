@@ -111,12 +111,12 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const periodSec = 60 / grid.meanBpm
   const div = p.gridDiv as 2 | 4
 
-  // 지역 그리드 스냅. 허용치 밖이면 그대로 둔다 — 셋잇단·스윙 보존.
+  // 지역 그리드 스냅. 구간이 셋잇단이면 셋잇단 격자로 붙는다. 허용치 밖이면 그대로 둔다.
   // 박자가 흐린 구간에서는 스냅하지 않는다. 못 믿는 그리드로 노트를 옮기면 더 틀린다.
   const snap = (t: number) => {
     if (grid.marginAt(t) < WEAK_MARGIN) return t
     const g = grid.nearest(t, div)
-    const tol = Math.min(0.035, 0.4 * (grid.stepAt(t) * (4 / div)))
+    const tol = Math.min(0.035, 0.4 * grid.stepAt(t, div))
     return Math.abs(g - t) <= tol ? g : t
   }
   const need = (o: Onset) => p.minRatio * ratioBoost(grid.marginAt(o.t))
@@ -162,7 +162,9 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const kept = { cursor: [] as Onset[], click: [] as Onset[], scroll: [] as Onset[] }
   for (const list of byBeat.values()) {
     list.sort((x, y) => y.o.ratio - x.o.ratio || x.o.t - y.o.t)
-    for (const x of list.slice(0, p.maxPerBeat)) kept[x.kind].push(x.o)
+    // 박자 흐린 구간은 비트당 하나까지만. 센 소리가 있어도 격자가 설명 못 하면 성기게 둔다.
+    const cap = grid.marginAt(list[0].o.t) < WEAK_MARGIN ? 1 : p.maxPerBeat
+    for (const x of list.slice(0, cap)) kept[x.kind].push(x.o)
   }
   const byT = (x: Onset, y: Onset) => x.t - y.t
   const cursorSrc = kept.cursor.sort(byT)

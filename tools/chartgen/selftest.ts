@@ -197,6 +197,8 @@ check(totals[0] < totals[1] && totals[1] < totals[2], `밀도 단조 증가  eas
 
 const weakSteady = a.grid.weakSpans().reduce((s, [x, y]) => s + (y - x), 0)
 check(weakSteady < 1, `박자 흐린 구간 ${weakSteady.toFixed(1)}s (정박 합성 — 0 이어야 한다)`)
+const tripSteady = a.grid.tripletSpans().reduce((s, [x, y]) => s + (y - x), 0)
+check(tripSteady < 1, `셋잇단 구간 ${tripSteady.toFixed(1)}s (정박 8분 햇 — 0 이어야 한다)`)
 
 const again = generate(a, 'hard', songHash)
 check(canonicalize(again) === canonicalize(charts[2]), '결정성 — 같은 입력이면 같은 채보')
@@ -221,6 +223,8 @@ for (const b of ['low', 'mid', 'high'] as const) {
 }
 const weakDrift = d.grid.weakSpans().reduce((s, [x, y]) => s + (y - x), 0)
 check(weakDrift < 1, `박자 흐린 구간 ${weakDrift.toFixed(1)}s (드리프트 합성 — 0 이어야 한다)`)
+const tripDrift = d.grid.tripletSpans().reduce((s, [x, y]) => s + (y - x), 0)
+check(tripDrift < 1, `셋잇단 구간 ${tripDrift.toFixed(1)}s (드리프트 합성 — 0 이어야 한다)`)
 const dBad = validate(dChart)
 const dSt = describe(dChart)
 check(dBad.length === 0, `hard   커서 ${dSt.counts.cursor} 클릭 ${dSt.counts.click} 스크롤 ${dSt.counts.scroll}  ${dSt.nps.toFixed(2)} nps  섹션 ${dChart.sections.length}` + (dBad.length ? `\n         ${dBad.slice(0, 5).join('\n         ')}` : ''))
