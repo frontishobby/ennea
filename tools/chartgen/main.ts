@@ -109,13 +109,29 @@ async function main() {
 
   const t0 = performance.now()
   const a = analyze(wav.mono, wav.sampleRate, { bpmHint })
+  const [lo, hi] = a.grid.bpmRange
+  const drift = ((hi - lo) / a.grid.meanBpm) * 100
   console.log(
-    `  분석 ${((performance.now() - t0) / 1000).toFixed(1)}s — BPM ${a.tempo.bpm.toFixed(2)}` +
-      (bpmHint ? ` (힌트 ${bpmHint})` : ' (자유 탐색)') +
-      `  신뢰도 ${a.tempo.confidence.toFixed(1)}  위상 ${(a.tempo.phaseSec * 1000).toFixed(0)}ms`,
+    `  분석 ${((performance.now() - t0) / 1000).toFixed(1)}s — BPM ${a.grid.meanBpm.toFixed(2)} 평균, ` +
+      `${lo.toFixed(1)}~${hi.toFixed(1)} (드리프트 ${drift.toFixed(1)}%)  전역 신뢰도 ${a.tempo.confidence.toFixed(1)}`,
   )
-  console.log(`  온셋  low ${a.byBand.low.length}  mid ${a.byBand.mid.length}  high ${a.byBand.high.length}`)
-  if (a.tempo.confidence < 2) console.warn('  ! 템포 신뢰도가 낮다. --bpm 으로 힌트를 주거나 곡을 의심한다.')
+  if (a.tempo.hintRejected)
+    console.warn(`  ! 힌트 BPM ${a.tempo.hintBpm} 는 이 곡이 아니다. 실제 ${a.tempo.bpm.toFixed(1)} 로 간다 — 프롬프트 BPM 을 모델이 안 지켰다.`)
+  else if (a.tempo.confidence < 2) console.warn('  ! 템포 신뢰도가 낮다. --bpm 으로 힌트를 주거나 곡을 의심한다.')
+  if (drift > 3) console.warn(`  ! 템포 드리프트 ${drift.toFixed(1)}% — 지역 그리드가 따라가지만 프리뷰로 꼭 확인한다.`)
+
+  console.log('  대역 적합도 (지역 16분 그리드 정렬률 / 확률):')
+  const TYPE = { low: 'scroll', mid: 'cursor', high: 'click' } as const
+  for (const b of ['low', 'mid', 'high'] as const) {
+    const f = a.fitness[b]
+    const mark = f.ok ? '✓' : '✗'
+    const why = f.ok ? '' : f.count < 8 ? '  온셋이 너무 적다' : '  그리드에 안 붙는다 — 이 대역엔 규칙적인 타격이 없다'
+    console.log(
+      `    ${mark} ${b.padEnd(4)} ${String(f.count).padStart(5)}개  ${(f.align * 100).toFixed(0).padStart(3)}% / ${(f.chance * 100).toFixed(0)}%` +
+        `  → ${TYPE[b]} 노트 ${f.ok ? '생성' : '생략'}${why}`,
+    )
+  }
+  if (!a.fitness.mid.ok) console.warn('  ! 커서 노트가 없는 채보다. 이 곡은 채보용으로 부적합할 가능성이 높다.')
 
   if (args.dump) {
     mkdirSync(WORK, { recursive: true })
@@ -163,7 +179,8 @@ async function main() {
       else song.charts.push(ref)
     }
     song.durationMs = Math.round(wav.durationSec * 1000)
-    if (!song.bpm) song.bpm = Math.round(a.tempo.bpm)
+    // 프롬프트 BPM 은 희망사항이다. 없거나 틀렸으면 실측 평균으로 쓴다.
+    if (!song.bpm || a.tempo.hintRejected) song.bpm = Math.round(a.grid.meanBpm)
     writeFileSync(SONGS_JSON, JSON.stringify(index, null, 2) + '\n')
     console.log(`\n  songs.json 갱신: ${song.slug} (${refs.map((r) => r.difficulty).join(', ')})`)
   }

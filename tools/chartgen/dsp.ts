@@ -91,6 +91,15 @@ export function hann(n: number): Float64Array {
 export interface FluxOptions {
   frameSize?: number
   hop?: number
+  /** 대역 경계 실험용. 기본은 BANDS. */
+  bands?: readonly Band[]
+  /**
+   * 직전 몇 프레임의 평균과 비교할지. 1 이면 고전적 spectral flux.
+   * 슈퍼소처럼 디튠된 오실레이터가 많은 믹스는 프레임마다 빈 크기가 맥놀이로 출렁여서
+   * 1프레임 차분이 상시 잡음 마루를 만든다. 3프레임 평균 대비면 그게 가라앉고(ACF 1.9→2.6)
+   * 깨끗한 타격은 재현율·bias 가 그대로다.
+   */
+  lag?: number
 }
 
 export interface Flux {
@@ -108,14 +117,14 @@ export interface Flux {
 export function bandFlux(
   mono: Float32Array,
   sampleRate: number,
-  { frameSize = 2048, hop = 512 }: FluxOptions = {},
+  { frameSize = 2048, hop = 512, bands = BANDS, lag = 3 }: FluxOptions = {},
 ): Flux {
   const fft = new FFT(frameSize)
   const window = hann(frameSize)
   const half = frameSize / 2
   const binHz = sampleRate / frameSize
 
-  const ranges = BANDS.map((b) => {
+  const ranges = bands.map((b) => {
     const lo = Math.max(1, Math.floor(b.lo / binHz))
     const hi = Math.min(half, Math.ceil(b.hi / binHz))
     return { name: b.name, lo, hi, count: Math.max(1, hi - lo) }
@@ -131,9 +140,12 @@ export function bandFlux(
 
   const re = new Float64Array(frameSize)
   const im = new Float64Array(frameSize)
-  const prevLog = new Float64Array(half + 1)
   const curLog = new Float64Array(half + 1)
   const norm = 1 / half
+  // 직전 lag 프레임의 로그 스펙트럼 링 버퍼와 그 합 — 평균은 합/lag
+  const ring = Array.from({ length: lag }, () => new Float64Array(half + 1))
+  const ringSum = new Float64Array(half + 1)
+  let filled = 0
 
   for (let n = 0; n < frames; n++) {
     const start = n * hop
@@ -149,17 +161,22 @@ export function bandFlux(
       curLog[k] = Math.log1p(1000 * mag)
     }
 
-    if (n > 0) {
+    if (filled > 0) {
+      const inv = 1 / filled
       for (const r of ranges) {
         let sum = 0
         for (let k = r.lo; k < r.hi; k++) {
-          const d = curLog[k] - prevLog[k]
+          const d = curLog[k] - ringSum[k] * inv
           if (d > 0) sum += d
         }
         flux[r.name][n] = sum / r.count
       }
     }
-    prevLog.set(curLog)
+    const slot = ring[n % lag]
+    if (filled === lag) for (let k = 0; k <= half; k++) ringSum[k] -= slot[k]
+    else filled++
+    slot.set(curLog)
+    for (let k = 0; k <= half; k++) ringSum[k] += slot[k]
   }
 
   const hopSec = hop / sampleRate

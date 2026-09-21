@@ -17,7 +17,6 @@ import {
 import { seeded } from '../../src/lib/util/prng.ts'
 import type { Analysis } from './analyze.ts'
 import type { Onset } from './onset.ts'
-import { snapToGrid } from './tempo.ts'
 
 export interface DifficultyParams {
   /** 비트 분할. 2 = 8분음표, 4 = 16분음표 */
@@ -93,29 +92,38 @@ function thin(onsets: Onset[], minGap: number, minRatio: number): Onset[] {
 export function generate(a: Analysis, difficulty: Difficulty, songHash: string): Chart {
   const p = PARAMS[difficulty]
   const rng = seeded(songHash, difficulty, GENERATOR)
-  const { periodSec, phaseSec } = a.tempo
-  const step = periodSec / p.gridDiv
-  const tol = Math.min(0.035, 0.4 * step)
-  const snap = (t: number) => snapToGrid(t, phaseSec, step, tol).t
+  const { grid } = a
+  const periodSec = 60 / grid.meanBpm
+  const div = p.gridDiv as 2 | 4
 
-  // 대역 → 타입. 스냅은 솎아내기 전에 — 같은 그리드 점으로 몰린 것들이 minGap 에서 정리된다.
+  // 지역 그리드 스냅. 허용치 밖이면 그대로 둔다 — 셋잇단·스윙 보존.
+  const snap = (t: number) => {
+    const g = grid.nearest(t, div)
+    const tol = Math.min(0.035, 0.4 * (grid.stepAt(t) * (4 / div)))
+    return Math.abs(g - t) <= tol ? g : t
+  }
+
+  // 대역 → 타입. 적합도 게이트를 못 넘은 대역은 비운다 — 그리드에 안 붙는 온셋을
+  // 스냅하면 노트가 음악 밖으로 밀려나고, 그건 소리로 바로 들린다.
+  const src = (band: 'low' | 'mid' | 'high') => (a.fitness[band].ok ? a.byBand[band] : [])
+  // 스냅은 솎아내기 전에 — 같은 그리드 점으로 몰린 것들이 minGap 에서 정리된다.
   const snapAll = (list: Onset[]) => list.map((o) => ({ ...o, t: snap(o.t) }))
   const gap = (beats: number) => beats * periodSec
-  const cursorSrc0 = thin(snapAll(a.byBand.mid), gap(p.minGapBeats.cursor), p.minRatio)
+  const cursorSrc0 = thin(snapAll(src('mid')), gap(p.minGapBeats.cursor), p.minRatio)
   const cursorTimes = cursorSrc0.map((o) => o.t)
   const nearCursor = (t: number, within: number) =>
     within > 0 && cursorTimes.some((c) => Math.abs(c - t) < within)
 
   // 클릭: 스네어·클랩은 광대역이라 고역에도 잡힌다. 커서와 동시에 치는 건 hard 만.
   const clickSrc0 = thin(
-    snapAll(a.byBand.high).filter((o) => !nearCursor(o.t, p.clickCursorExclusion)),
+    snapAll(src('high')).filter((o) => !nearCursor(o.t, p.clickCursorExclusion)),
     gap(p.minGapBeats.click),
     p.minRatio,
   )
 
   // 스크롤: 커서 노트 ±50ms 안은 어떤 난이도에서도 안 된다. 바닥 200ms 도 절대.
   const scrollSrc0 = thin(
-    snapAll(a.byBand.low).filter((o) => !nearCursor(o.t, SCROLL_CURSOR_EXCLUSION_SEC)),
+    snapAll(src('low')).filter((o) => !nearCursor(o.t, SCROLL_CURSOR_EXCLUSION_SEC)),
     Math.max(gap(p.minGapBeats.scroll), SCROLL_FLOOR_SEC),
     p.minRatio,
   )
@@ -128,7 +136,7 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   ]
   const byBeat = new Map<number, typeof tagged>()
   for (const x of tagged) {
-    const b = Math.floor((x.o.t - phaseSec) / periodSec + 1e-9)
+    const b = grid.beatIndexAt(x.o.t)
     const list = byBeat.get(b)
     if (list) list.push(x)
     else byBeat.set(b, [x])
@@ -208,20 +216,19 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
     (x, y) => x.t - y.t || order[x.type] - order[y.type],
   )
 
-  // 섹션: 위상에서 시작해 8마디마다. 마지막 구간이 4마디 미만이면 앞 구간에 합친다.
-  const barSec = 4 * periodSec
-  const sectionSec = SECTION_BARS * barSec
+  // 섹션: 비트 목록에서 8마디(32비트)마다. 마지막 구간이 4마디 미만이면 앞 구간에 합친다.
+  const beats = grid.beats.map(ms)
+  const perSection = SECTION_BARS * 4
   const sections = [0]
-  for (let b = phaseSec + sectionSec; b <= a.durationSec - 4 * barSec; b += sectionSec) {
-    sections.push(ms(b))
-  }
+  for (let i = perSection; i + perSection / 2 < beats.length; i += perSection) sections.push(beats[i])
 
   return {
     version: CHART_VERSION,
     generator: GENERATOR,
     difficulty,
-    bpm: Math.round(a.tempo.bpm * 1000) / 1000,
-    beatOffsetMs: ms(phaseSec),
+    bpm: Math.round(grid.meanBpm * 1000) / 1000,
+    beatOffsetMs: beats[0] ?? 0,
+    beats,
     audioOffsetMs: 0,
     sections,
     notes,
@@ -297,5 +304,9 @@ export function validate(chart: Chart): string[] {
     if (d > 0 && d / dt > p.vMax + 1e-6) bad.push(`커서 속도 초과 ${(d / dt).toFixed(1)} > ${p.vMax} @${b.t}`)
   }
   if (chart.sections[0] !== 0) bad.push('sections 는 0 으로 시작해야 한다')
+  for (let i = 1; i < chart.beats.length; i++) {
+    const d = chart.beats[i] - chart.beats[i - 1]
+    if (d <= 0) bad.push(`beats 가 단조 증가가 아니다 @${chart.beats[i]}`)
+  }
   return bad
 }

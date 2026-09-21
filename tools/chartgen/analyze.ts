@@ -3,6 +3,7 @@
  * 걸러서 만든다 — 대역별 검출을 세 번 반복할 이유가 없다.
  */
 import { bandFlux, BANDS, type BandName } from './dsp.ts'
+import { fitLocalGrid, type LocalGrid } from './grid.ts'
 import { medianThreshold, pickPeaks, type Onset, type ThresholdParams } from './onset.ts'
 import { estimatePhase, estimateTempo, type BpmRange, type TempoEstimate } from './tempo.ts'
 
@@ -43,16 +44,41 @@ export interface AnalyzeOptions {
   bpmRange?: BpmRange
 }
 
+/**
+ * 대역이 채보에 쓸 만한가. 지역 그리드에 대한 16분음표 정렬률이 확률 기준선을
+ * CHARTABLE_MARGIN 이상 넘어야 한다. 실측: 킥 없는 베이스 벽은 42% vs 확률 34% (+8),
+ * 리듬 있는 mid 는 76% (+37). 못 넘는 대역의 노트 타입은 만들지 않는다 —
+ * 그리드에 안 붙는 온셋을 스냅하면 노트가 음악 밖으로 밀려나 소리로 바로 들린다.
+ */
+export const CHARTABLE_MARGIN = 0.2
+export const ALIGN_TOL_SEC = 0.02
+
+export interface BandFitness {
+  /** 지역 16분 그리드 정렬률 */
+  align: number
+  /** 무작위 온셋이 우연히 붙을 확률 */
+  chance: number
+  ok: boolean
+  count: number
+}
+
 export interface Analysis {
   sampleRate: number
   durationSec: number
   hopSec: number
-  tempo: TempoEstimate & { phaseSec: number }
+  tempo: TempoEstimate & {
+    phaseSec: number
+    /** 호출자가 준 힌트. 경계에 붙어서 버렸으면 hintRejected. */
+    hintBpm?: number
+    hintRejected: boolean
+  }
   /** 전 대역, t 오름차순 */
   onsets: Onset[]
   byBand: Record<BandName, Onset[]>
   novelty: Float64Array
   timeOf: (n: number) => number
+  grid: LocalGrid
+  fitness: Record<BandName, BandFitness>
 }
 
 /**
@@ -101,20 +127,52 @@ export function analyze(mono: Float32Array, sampleRate: number, opts: AnalyzeOpt
   )
   for (const name of ['low', 'mid', 'high'] as const) byBand[name] = onsets.filter((o) => o.band === name)
 
-  const range: BpmRange = opts.bpmHint
-    ? { min: opts.bpmHint * 0.92, max: opts.bpmHint * 1.08 }
-    : (opts.bpmRange ?? { min: 80, max: 200 })
-  const tempo = estimateTempo(novelty, fx.hopSec, range)
+  const free: BpmRange = opts.bpmRange ?? { min: 80, max: 200 }
+  let tempo: TempoEstimate
+  let hintRejected = false
+  if (opts.bpmHint) {
+    // 프롬프트에 적은 BPM 을 모델이 지킨다는 보장이 없다. 힌트 범위 안 추정이 경계에
+    // 붙으면 진짜 값이 밖에 있다는 신호다 — 자유 탐색으로 물러난다.
+    const hinted = estimateTempo(novelty, fx.hopSec, { min: opts.bpmHint * 0.92, max: opts.bpmHint * 1.08 })
+    const atEdge = hinted.bpm <= opts.bpmHint * 0.92 * 1.005 || hinted.bpm >= opts.bpmHint * 1.08 * 0.995
+    if (atEdge) {
+      const unhinted = estimateTempo(novelty, fx.hopSec, free)
+      if (unhinted.confidence >= hinted.confidence) {
+        tempo = unhinted
+        hintRejected = true
+      } else tempo = hinted
+    } else tempo = hinted
+  } else tempo = estimateTempo(novelty, fx.hopSec, free)
   const phaseSec = estimatePhase(onsets, tempo.periodSec)
+
+  // 지역 그리드는 mid + high 로 맞춘다. 저역은 킥이 아니라 베이스 벽일 수 있다.
+  const grid = fitLocalGrid({
+    novelty,
+    hopSec: fx.hopSec,
+    durationSec,
+    onsets: [...byBand.mid, ...byBand.high].sort((a, b) => a.t - b.t),
+    allOnsets: onsets,
+    globalBpm: tempo.bpm,
+  })
+
+  const fitness = {} as Record<BandName, BandFitness>
+  for (const name of ['low', 'mid', 'high'] as const) {
+    const list = byBand[name]
+    const align = grid.alignment(list, 4, ALIGN_TOL_SEC)
+    const chance = Math.min(1, (2 * ALIGN_TOL_SEC) / (60 / grid.meanBpm / 4))
+    fitness[name] = { align, chance, ok: list.length >= 8 && align - chance >= CHARTABLE_MARGIN, count: list.length }
+  }
 
   return {
     sampleRate,
     durationSec,
     hopSec: fx.hopSec,
-    tempo: { ...tempo, phaseSec },
+    tempo: { ...tempo, phaseSec, hintBpm: opts.bpmHint, hintRejected },
     onsets,
     byBand,
     novelty,
     timeOf: fx.timeOf,
+    grid,
+    fitness,
   }
 }

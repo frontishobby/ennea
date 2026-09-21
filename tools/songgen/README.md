@@ -102,6 +102,51 @@ Windows PowerShell 5.1은 **네이티브 명령이 stderr 에 한 줄만 써도 
 | `--guidance 12` | 프롬프트를 얼마나 세게 따를지 (기본 15) |
 | `--cpu-offload` | VRAM 부족할 때. 4080이면 필요 없다 |
 
+## 비슷한 것 더 뽑기 — `--like`
+
+`--seed` 와 `--like` 는 다른 물건이다.
+
+- **`--seed 1451544524`** 는 복사다. 같은 시드 + 같은 파라미터 = 바이트까지 같은 파일. 재현용
+- **`--like 1451544524`** 는 retake 다. 원본 시드의 노이즈에 두 번째 시드를 `--variance` 만큼 섞는다.
+  **얼마나 다를지를 숫자로 조절한다.** 프롬프트·길이·스텝은 `manifest.json` 에서 그대로 가져오므로
+  앵커가 정확하다. 원본 WAV 는 필요 없다
+
+```powershell
+.\run.ps1 --like 1451544524 -n 6                  # variance 0.2 (기본): 같은 곡의 다른 테이크
+.\run.ps1 --like 1451544524 -n 4 --variance 0.4   # 같은 곡의 다른 편곡
+.\run.ps1 --like 1451544524 --repaint 64-96       # 64~96초 구간만 다시 (원본 WAV 필요)
+.\run.ps1 --like 1451544524 --steps 120           # 같은 앵커, 더 정교하게
+```
+
+| variance | 결과 |
+|---|---|
+| 0.1 | 같은 곡, 신스 레이어만 조금 다름 |
+| 0.2~0.3 | 같은 곡의 다른 편곡 |
+| 0.5 | 같은 분위기의 다른 곡 |
+| 0.8 | 사실상 남 |
+
+파일명에 혈통이 남는다: `future-core-1451544524-r794978651.wav`, repaint 는 `-p64_96-<seed>`.
+`manifest.json` 에도 `task`, `retakeSeed`, `variance`, `repaint` 가 기록된다.
+
+### 채보용으로 "더 좋게"
+
+**듣기 좋은 것과 채보가 나오는 것은 다른 질문이다.** 채보 생성기를 먼저 돌려 대역 적합도를 본다:
+
+```powershell
+npm run chart -- tools\songgen\out\future-core\future-core-1451544524.wav --slug test --no-register --preview
+```
+
+```
+  ✗ low   1187개   32% / 39%  → scroll 노트 생략  그리드에 안 붙는다
+  ✓ mid    656개   65% / 39%  → cursor 노트 생성
+  ✓ high   440개   71% / 39%  → click 노트 생성
+```
+
+low ✗ 는 **킥이 없다**는 뜻이다. 프롬프트에 "four on the floor kick" 을 써도 모델이 베이스 벽을 만들 수 있다.
+그럴 땐 음악 쪽을 고친다 — `--like` 로 형제를 뽑되 프롬프트를 손봐서 (`punchy kick drum on every beat,
+tight sub bass, minimal bass sustain`) 저역이 성기고 때리는 소리가 되게 한다. 그리고 다시 적합도를 본다.
+BPM 도 프롬프트를 안 지킨다 (160 → 실제 145.8). `songs.json` 의 bpm 은 생성기가 실측으로 채운다.
+
 ## WAV 저장 경로
 
 torchaudio 2.9부터 `save()`가 무조건 TorchCodec으로 넘어간다. TorchCodec은 윈도우에서

@@ -52,8 +52,11 @@ export function medianThreshold(
  *   32ms 뒤: 0.40배 필요 → 킥 꼬리(1/13)는 죽고
  *   86ms 뒤: 0.20배 필요 → 174 BPM 16분 햇(같은 세기)은 산다
  */
-export const MASK_REL = 0.6
-export const MASK_TAU_SEC = 0.08
+export interface Mask {
+  rel: number
+  tauSec: number
+}
+export const DEFAULT_MASK: Mask = { rel: 0.6, tauSec: 0.08 }
 
 /**
  * 임계값 초과 + 국소 최대 + 최소 간격 + 감쇠 마스크.
@@ -66,6 +69,7 @@ export function pickPeaks(
   timeOf: (n: number) => number,
   minGapSec: number,
   latencySec = 0,
+  mask: Mask = DEFAULT_MASK,
 ): Onset[] {
   const out: Onset[] = []
   const n = sf.length
@@ -80,7 +84,7 @@ export function pickPeaks(
         if (onset.ratio > last.ratio) out[out.length - 1] = onset
         continue
       }
-      if (v < last.sf * MASK_REL * Math.exp(-dt / MASK_TAU_SEC)) continue
+      if (v < last.sf * mask.rel * Math.exp(-dt / mask.tauSec)) continue
     }
     out.push(onset)
   }

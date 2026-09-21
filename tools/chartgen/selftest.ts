@@ -21,12 +21,11 @@ const SR = 48000
 const BPM = 150
 const DUR = 40
 const PHASE = 0.137
-const BEAT = 60 / BPM
 const INTRO_BEATS = 8
 const TOL = 0.03
 
-const rand = mulberry32(42)
-const sig = new Float32Array(SR * DUR)
+let rand = mulberry32(42)
+let sig = new Float32Array(SR * DUR)
 
 /**
  * 끝 20ms 를 반코사인으로 접는다 — 뚝 끊기면 그 자체가 광대역 클릭이 돼서 가짜 온셋을 만든다.
@@ -68,38 +67,56 @@ function hat(t: number, amp: number) {
   add(t, n / SR, (i) => amp * (w[i + 2] - 2 * w[i + 1] + w[i]) * Math.exp(-i / (SR * 0.012)))
 }
 
-const kicks: number[] = []
-const snares: number[] = []
-const hatsOff: number[] = [] // 뒷박 하이햇 — 킥/스네어와 안 겹치는 것만 정답으로 센다
-const hatsOn: number[] = []
-for (let k = 0; ; k++) {
-  const t = PHASE + k * (BEAT / 2)
-  if (t > DUR - 1) break
-  const beatIdx = k >> 1
-  const onBeat = (k & 1) === 0
-  const intro = beatIdx < INTRO_BEATS
-  hat(t, intro ? 0.06 : 0.12)
-  if (onBeat) {
-    hatsOn.push(t)
-    if (!intro) {
-      if (beatIdx % 2 === 0) {
-        kick(t)
-        kicks.push(t)
-      } else {
-        snare(t)
-        snares.push(t)
+interface Truth {
+  kicks: number[]
+  snares: number[]
+  hatsOff: number[] // 뒷박 하이햇 — 킥/스네어와 안 겹치는 것만 정답으로 센다
+  hatsOn: number[]
+  beats: number[]
+}
+
+/**
+ * 드럼 패턴을 만든다. bpmAt(t) 로 템포 곡선을 준다 — 상수면 정박, 램프면 드리프트.
+ * 8분음표 시각은 순간 템포를 적분해서 얻는다.
+ */
+function synth(bpmAt: (t: number) => number): Truth {
+  rand = mulberry32(42)
+  sig = new Float32Array(SR * DUR)
+  const truth: Truth = { kicks: [], snares: [], hatsOff: [], hatsOn: [], beats: [] }
+  let t = PHASE
+  for (let k = 0; ; k++) {
+    if (t > DUR - 1) break
+    const beatIdx = k >> 1
+    const onBeat = (k & 1) === 0
+    const intro = beatIdx < INTRO_BEATS
+    hat(t, intro ? 0.06 : 0.12)
+    if (onBeat) {
+      truth.hatsOn.push(t)
+      truth.beats.push(t)
+      if (!intro) {
+        if (beatIdx % 2 === 0) {
+          kick(t)
+          truth.kicks.push(t)
+        } else {
+          snare(t)
+          truth.snares.push(t)
+        }
       }
-    }
-  } else hatsOff.push(t)
+    } else truth.hatsOff.push(t)
+    t += 60 / bpmAt(t) / 2
+  }
+  // 패드 + 노이즈 바닥. 지속음은 온셋이 아니어야 하고, LFO 가 만드는 작은 flux 도 무시돼야 한다.
+  for (let i = 0; i < sig.length; i++) {
+    const tt = i / SR
+    const lfo = 0.8 + 0.2 * Math.sin(2 * Math.PI * 0.1 * tt)
+    sig[i] +=
+      (0.1 * lfo * (Math.sin(2 * Math.PI * 220 * tt) + Math.sin(2 * Math.PI * 277 * tt) + Math.sin(2 * Math.PI * 330 * tt))) / 3 +
+      0.0015 * (rand() * 2 - 1)
+  }
+  return truth
 }
-// 패드 + 노이즈 바닥. 지속음은 온셋이 아니어야 하고, LFO 가 만드는 작은 flux 도 무시돼야 한다.
-for (let i = 0; i < sig.length; i++) {
-  const tt = i / SR
-  const lfo = 0.8 + 0.2 * Math.sin(2 * Math.PI * 0.1 * tt)
-  sig[i] +=
-    (0.1 * lfo * (Math.sin(2 * Math.PI * 220 * tt) + Math.sin(2 * Math.PI * 277 * tt) + Math.sin(2 * Math.PI * 330 * tt))) / 3 +
-    0.0015 * (rand() * 2 - 1)
-}
+
+const { kicks, snares, hatsOff, hatsOn } = synth(() => BPM)
 
 // ── 분석 ──────────────────────────────────────────────────────────
 let failures = 0
@@ -182,6 +199,34 @@ const again = generate(a, 'hard', songHash)
 check(canonicalize(again) === canonicalize(charts[2]), '결정성 — 같은 입력이면 같은 채보')
 const other = generate(a, 'hard', 'another-song')
 check(canonicalize(other) !== canonicalize(charts[2]), '시드 — 다른 곡 해시면 다른 배치')
+
+// ── 드리프트: 150 → 154 BPM 으로 40초 동안 선형 가속 (+2.7%). 실측 ACE-Step 은 ±1.4% ──
+console.log('\n드리프트 (150→154 BPM 램프)')
+const drifted = synth((t) => BPM + 4 * (t / DUR))
+const d = analyze(sig, SR)
+const [dlo, dhi] = d.grid.bpmRange
+check(dlo < 151.5 && dhi > 152.5, `지역 BPM 범위 ${dlo.toFixed(1)}~${dhi.toFixed(1)} 이 램프를 따라간다 (평균 ${d.grid.meanBpm.toFixed(1)})`)
+// 채보의 beats 가 진짜 비트를 얼마나 가까이 따라가나
+const dChart = generate(d, 'hard', songHash)
+const beatErr = drifted.beats.map((b) => Math.min(...dChart.beats.map((x) => Math.abs(x / 1000 - b))))
+beatErr.sort((x, y) => x - y)
+const p90 = beatErr[Math.floor(beatErr.length * 0.9)]
+check(p90 < 0.02, `beats 추적 오차 p50 ${(beatErr[beatErr.length >> 1] * 1000).toFixed(1)}ms  p90 ${(p90 * 1000).toFixed(1)}ms  (정답 비트 ${drifted.beats.length}, 채보 비트 ${dChart.beats.length})`)
+for (const b of ['low', 'mid', 'high'] as const) {
+  const f = d.fitness[b]
+  check(f.ok, `${b.padEnd(4)} 적합도 정렬 ${(f.align * 100).toFixed(0)}% / 확률 ${(f.chance * 100).toFixed(0)}% → ${f.ok ? '통과' : '탈락'}`)
+}
+const dBad = validate(dChart)
+const dSt = describe(dChart)
+check(dBad.length === 0, `hard   커서 ${dSt.counts.cursor} 클릭 ${dSt.counts.click} 스크롤 ${dSt.counts.scroll}  ${dSt.nps.toFixed(2)} nps  섹션 ${dChart.sections.length}` + (dBad.length ? `\n         ${dBad.slice(0, 5).join('\n         ')}` : ''))
+// 스냅이 노트를 음악 밖으로 밀지 않았나: 킥 노트(scroll)와 진짜 킥의 거리
+const scrollT = dChart.notes.filter((n) => n.type === 'scroll').map((n) => n.t / 1000)
+const kickErr = drifted.kicks.map((k) => Math.min(...scrollT.map((x) => Math.abs(x - k)))).filter((e) => e < 0.1)
+kickErr.sort((x, y) => x - y)
+check(kickErr[Math.floor(kickErr.length * 0.9)] < 0.025, `스냅 후 스크롤 노트 ↔ 진짜 킥 p90 ${(kickErr[Math.floor(kickErr.length * 0.9)] * 1000).toFixed(1)}ms (매칭 ${kickErr.length}/${drifted.kicks.length})`)
+
+// 정박 시나리오도 새 그리드로 다시 확인 — 드리프트 기계가 정박을 해치면 안 된다
+synth(() => BPM)
 
 if (process.argv.includes('--wav')) {
   const dir = join(import.meta.dirname, 'work')

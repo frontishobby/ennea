@@ -9,7 +9,7 @@
 export const CHART_VERSION = 1 as const
 
 /** 생성기 이름+버전. 알고리즘이 바뀌면 올린다 — 시드와 해시가 같이 바뀐다. */
-export const GENERATOR = 'onset-v1'
+export const GENERATOR = 'onset-v2'
 
 /** Expert 는 일단 없다. hard 가 천장이다. */
 export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const
@@ -43,10 +43,15 @@ export interface Chart {
   version: typeof CHART_VERSION
   generator: string
   difficulty: Difficulty
-  /** 추정 BPM. 비트 라인 렌더와 디버깅용. */
+  /** 평균 BPM. 표시용 — 실제 그리드는 beats 다. */
   bpm: number
-  /** 첫 비트가 놓이는 시각(ms). 그리드 = beatOffsetMs + k · 60000/bpm. */
+  /** 첫 비트 시각(ms) = beats[0]. 하위 호환·가독성용. */
   beatOffsetMs: number
+  /**
+   * 비트 시각 목록(ms). 템포가 곡 안에서 흔들리므로 고정 격자가 아니라 목록이다.
+   * 비트 라인 렌더와 구간 경계가 여기서 나온다.
+   */
+  beats: number[]
   /** 디코더 프라이밍 등으로 인한 음원 고정 오프셋(ms). 곡마다 실측 (PLAN §5). */
   audioOffsetMs: number
   /** 1v1 구간 승부 경계(ms). 항상 0으로 시작한다 (PLAN §10). */
@@ -60,6 +65,7 @@ export interface Chart {
  * 디스크의 채보 파일은 정확히 이 문자열이므로 sha256(파일 바이트) == chartHash 다.
  */
 export function canonicalize(chart: Chart): string {
+  for (const b of chart.beats) if (!Number.isInteger(b)) throw new Error(`beats must be integer ms, got ${b}`)
   const notes = chart.notes.map((n) => {
     if (!Number.isInteger(n.t)) throw new Error(`note.t must be an integer ms, got ${n.t}`)
     switch (n.type) {
@@ -77,6 +83,7 @@ export function canonicalize(chart: Chart): string {
     difficulty: chart.difficulty,
     bpm: chart.bpm,
     beatOffsetMs: chart.beatOffsetMs,
+    beats: chart.beats,
     audioOffsetMs: chart.audioOffsetMs,
     sections: chart.sections,
     notes,
