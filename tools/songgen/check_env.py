@@ -17,6 +17,8 @@ info = {
     "gpu": None,
     "vram": None,
     "acestep": False,
+    "soundfile": False,
+    "torchcodec": False,
     "errors": [],
 }
 
@@ -31,12 +33,13 @@ try:
 except Exception as exc:
     info["errors"].append(f"torch: {type(exc).__name__}: {exc}"[:200])
 
-try:
-    import importlib.util
+import importlib.util
 
-    info["acestep"] = importlib.util.find_spec("acestep") is not None
-except Exception as exc:
-    info["errors"].append(f"acestep: {type(exc).__name__}: {exc}"[:200])
+for mod in ("acestep", "soundfile", "torchcodec"):
+    try:
+        info[mod] = importlib.util.find_spec(mod) is not None
+    except Exception as exc:
+        info["errors"].append(f"{mod}: {type(exc).__name__}: {exc}"[:200])
 
 # ensure_ascii=True 가 기본이라 비ASCII는 \uXXXX 로 이스케이프된다.
 print(json.dumps(info))

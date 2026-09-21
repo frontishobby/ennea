@@ -102,6 +102,23 @@ Windows PowerShell 5.1은 **네이티브 명령이 stderr 에 한 줄만 써도 
 | `--guidance 12` | 프롬프트를 얼마나 세게 따를지 (기본 15) |
 | `--cpu-offload` | VRAM 부족할 때. 4080이면 필요 없다 |
 
+## WAV 저장 경로
+
+torchaudio 2.9부터 `save()`가 무조건 TorchCodec으로 넘어간다. TorchCodec은 윈도우에서
+FFmpeg 공유 라이브러리를 따로 요구해서, 안 깔려 있으면 생성은 다 끝내놓고 **저장에서만**
+터진다:
+
+```
+ImportError: TorchCodec is required for save_with_torchcodec.
+```
+
+`generate.py`가 `torchaudio.save`를 soundfile 직접 쓰기로 갈아끼워서 우회한다
+(`write_wav`). ACE-Step이 저장하는 건 WAV 하나뿐이라 이걸로 충분하다.
+`torchcodec`이 이미 깔려 있으면 건드리지 않는다.
+
+출력은 48kHz PCM_24다. 정수 PCM이라 어디서나 읽히고, 온셋 검출에는 넘치는 해상도다.
+피크가 1.0을 넘으면 클립하고 그 사실을 찍는다.
+
 ## 작업 흐름
 
 ACE-Step은 **시드에 극도로 민감하고 결과가 들쭉날쭉하다** — 모델 카드가 직접 인정한다.

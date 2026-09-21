@@ -42,6 +42,55 @@ class Job:
     guidance: float
 
 
+def write_wav(uri, src, sample_rate: int = 48000, **_ignored) -> None:
+    """torchaudio.save 대체. WAV만 쓴다 — ACE-Step이 그것밖에 안 쓴다."""
+    import numpy as np
+    import soundfile as sf
+
+    data = src.detach().cpu().numpy() if hasattr(src, "detach") else np.asarray(src)
+    data = np.squeeze(data)
+    # torchaudio는 (채널, 샘플), soundfile은 (샘플, 채널) 순서다.
+    # 채널은 많아야 2라서 첫 축이 짧으면 채널 축으로 본다.
+    if data.ndim == 2 and data.shape[0] <= 8 and data.shape[0] < data.shape[1]:
+        data = data.T
+    peak = float(np.max(np.abs(data))) if data.size else 0.0
+    if peak > 1.0:
+        print(f"      (피크 {peak:.2f} — [-1, 1]로 클립)")
+        data = np.clip(data, -1.0, 1.0)
+    # PCM_24: 정수 PCM이라 어디서나 읽히고, 채보 분석에는 넘치는 해상도다.
+    sf.write(str(uri), data, int(sample_rate), subtype="PCM_24")
+
+
+def install_wav_writer() -> str:
+    """
+    torchaudio 2.9부터 save()가 무조건 TorchCodec으로 넘어간다. TorchCodec은
+    윈도우에서 FFmpeg 공유 라이브러리를 따로 요구해서 설치가 번거로운데,
+    ACE-Step이 저장하는 건 WAV 하나뿐이라 soundfile로 직접 쓰면 그만이다.
+
+    torchcodec이 이미 깔려 있으면 건드리지 않는다.
+    """
+    import torchaudio
+
+    try:
+        import torchcodec  # noqa: F401
+
+        return "torchcodec"
+    except ImportError:
+        pass
+
+    try:
+        import numpy  # noqa: F401
+        import soundfile  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            "WAV를 저장할 수 없다. soundfile 이 없고 torchcodec 도 없다.\n"
+            "  .venv\\Scripts\\python.exe -m pip install soundfile"
+        ) from exc
+
+    torchaudio.save = write_wav
+    return "soundfile"
+
+
 def load_presets() -> tuple[dict, dict[str, dict]]:
     data = json.loads(PRESET_FILE.read_text(encoding="utf-8"))
     return data.get("defaults", {}), {p["id"]: p for p in data["presets"]}
@@ -140,8 +189,10 @@ def main() -> int:
         )
         return 1
 
+    writer = install_wav_writer()
+
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    print("모델 로딩 중 — 첫 실행이면 체크포인트를 내려받느라 몇 분 걸린다.")
+    print(f"모델 로딩 중 (WAV 저장: {writer}) — 첫 실행이면 체크포인트를 내려받느라 몇 분 걸린다.")
     pipeline = ACEStepPipeline(
         checkpoint_dir=str(CHECKPOINT_DIR),
         dtype="bfloat16" if args.bf16 == "true" else "float32",

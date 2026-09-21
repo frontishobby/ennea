@@ -103,6 +103,13 @@ Write-Host "ACE-Step 설치..." -ForegroundColor Cyan
 & $venvPy -m pip install "git+https://github.com/ace-step/ACE-Step.git"
 if ($LASTEXITCODE -ne 0) { Write-Host "ACE-Step 설치 실패" -ForegroundColor Red; Finish 1 }
 
+# torchaudio 2.9+ 는 save() 를 TorchCodec 으로 넘긴다. TorchCodec 은 윈도우에서
+# FFmpeg 공유 라이브러리를 따로 요구하므로, generate.py 가 soundfile 로 직접 쓴다.
+Write-Host ""
+Write-Host "soundfile 확인..." -ForegroundColor Cyan
+& $venvPy -m pip install soundfile
+if ($LASTEXITCODE -ne 0) { Write-Host "soundfile 설치 실패" -ForegroundColor Red; Finish 1 }
+
 # 5. 환경 점검
 # check_env.py 는 ASCII JSON만 뱉는다. 여러 줄 파이썬 코드를 -c 인자로 넘기면
 # PS 5.1의 네이티브 인자 처리에서 깨질 수 있어 파일로 분리했다.
@@ -131,6 +138,7 @@ if (-not $info) {
 Write-Host "  python   $($info.python)"
 Write-Host "  torch    $(if ($info.torch) { $info.torch } else { '없음' })"
 Write-Host "  acestep  $(if ($info.acestep) { '설치됨' } else { '없음' })"
+Write-Host "  wav      $(if ($info.torchcodec) { 'torchcodec' } elseif ($info.soundfile) { 'soundfile' } else { '저장 불가' })"
 if ($info.cuda) {
     Write-Host "  gpu      $($info.gpu)"
     Write-Host "  vram     $($info.vram) GB"
@@ -141,6 +149,12 @@ foreach ($e in @($info.errors)) {
     if ($e) { Write-Host "  !! $e" -ForegroundColor Red }
 }
 
+if (-not $info.soundfile -and -not $info.torchcodec) {
+    Write-Host ""
+    Write-Host "WAV를 저장할 방법이 없다. soundfile 을 설치한다:" -ForegroundColor Red
+    Write-Host "  .\.venv\Scripts\python.exe -m pip install soundfile"
+    Finish 1
+}
 if (-not $info.torch -or -not $info.acestep) {
     Write-Host ""
     Write-Host "설치가 덜 됐다. 위 오류를 보고 다시 실행한다." -ForegroundColor Red
