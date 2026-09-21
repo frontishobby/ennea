@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "_note": "Placeholder entries. No audio or chart files exist for these yet — they are here so the song select has something to lay out. Replaced for real at M8.",
+  "placeholder": true,
+  "songs": [
+    {
+      "slug": "neon-drift",
+      "title": "Neon Drift",
+      "artist": "Sable Unit",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 183000,
+      "bpm": 128,
+      "previewStartMs": 42000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "d8f88cdda3097404",
+          "noteCount": 392,
+          "level": 2
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "40400042e3ab391f",
+          "noteCount": 732,
+          "level": 5
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "dd220c8548163ea7",
+          "noteCount": 1072,
+          "level": 8
+        }
+      ]
+    },
+    {
+      "slug": "paper-lanterns",
+      "title": "Paper Lanterns",
+      "artist": "Sable Unit",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 164000,
+      "bpm": 96,
+      "previewStartMs": 38000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "7c55fa3eb6eb4804",
+          "noteCount": 249,
+          "level": 1
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "41a3e0014b963b81",
+          "noteCount": 453,
+          "level": 3
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "0d4e9f11c1a89681",
+          "noteCount": 758,
+          "level": 6
+        }
+      ]
+    },
+    {
+      "slug": "static-bloom",
+      "title": "Static Bloom",
+      "artist": "Molid",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 201000,
+      "bpm": 140,
+      "previewStartMs": 61000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "8a96ec54aa93d512",
+          "noteCount": 555,
+          "level": 3
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "9bd54eef67aac881",
+          "noteCount": 929,
+          "level": 6
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "84443a6c9a19e3d4",
+          "noteCount": 1302,
+          "level": 9
+        }
+      ]
+    },
+    {
+      "slug": "halogen",
+      "title": "Halogen",
+      "artist": "Molid",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 178000,
+      "bpm": 150,
+      "previewStartMs": 54000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "normal",
+          "chartHash": "5e9b2d31a822d57b",
+          "noteCount": 712,
+          "level": 5
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "789f77d5f67cd4c3",
+          "noteCount": 1043,
+          "level": 8
+        }
+      ]
+    },
+    {
+      "slug": "tidal-lock",
+      "title": "Tidal Lock",
+      "artist": "Vantablue",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 242000,
+      "bpm": 174,
+      "previewStartMs": 88000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "fe11eccd87dba0aa",
+          "noteCount": 668,
+          "level": 3
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "b9568f1ad8b8e050",
+          "noteCount": 1118,
+          "level": 6
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "1e403bc80cf26c94",
+          "noteCount": 1718,
+          "level": 10
+        }
+      ]
+    },
+    {
+      "slug": "cobalt-rain",
+      "title": "Cobalt Rain",
+      "artist": "Vantablue",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 215000,
+      "bpm": 118,
+      "previewStartMs": 70000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "6577cfc7cf8506c8",
+          "noteCount": 460,
+          "level": 2
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "e6f3f11b9eb2b769",
+          "noteCount": 727,
+          "level": 4
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "f9ef301a7096f859",
+          "noteCount": 1127,
+          "level": 7
+        }
+      ]
+    },
+    {
+      "slug": "midnight-arcade",
+      "title": "Midnight Arcade",
+      "artist": "Kestrel Nine",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 192000,
+      "bpm": 132,
+      "previewStartMs": 48000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "78d051fbde83d89b",
+          "noteCount": 411,
+          "level": 2
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "90aadcf531b3f662",
+          "noteCount": 768,
+          "level": 5
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "737fc520a04c05b0",
+          "noteCount": 1125,
+          "level": 8
+        }
+      ]
+    },
+    {
+      "slug": "velvet-circuit",
+      "title": "Velvet Circuit",
+      "artist": "Kestrel Nine",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 156000,
+      "bpm": 160,
+      "previewStartMs": 36000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "normal",
+          "chartHash": "500201934dfca78d",
+          "noteCount": 721,
+          "level": 6
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "8e33a9f13db72eb3",
+          "noteCount": 1011,
+          "level": 9
+        }
+      ]
+    }
+  ]
+}

@@ -12,3 +12,6 @@ dist/
 tools/chartgen/work/
 *.wav
 *.flac
+
+# Playwright MCP 스크린샷
+.playwright-mcp/

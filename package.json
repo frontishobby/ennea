@@ -1,0 +1,27 @@
+{
+  "name": "ennea",
+  "version": "0.0.0",
+  "description": "Mouse-driven rhythm game on a 3x3 grid.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "gen:covers": "node scripts/gen-covers.ts"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^26.6.2",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "@fontsource-variable/rubik": "^5.3.0",
+    "pixi.js": "^8.21.0"
+  },
+  "private": true
+}

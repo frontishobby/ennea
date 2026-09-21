@@ -1,0 +1,161 @@
+@import '@fontsource-variable/rubik/wght.css';
+
+/* ═══════════════════════════════════════════════════════════════
+   ENNEA design tokens
+
+   The law: every shape is a square with the same corner curvature,
+   radius = 0.22 x its shortest side. Hierarchy comes from size,
+   never from radius. Squares take the percentage form (--curve);
+   anything that isn't square takes the px step matching its height.
+   The same constant lives in src/lib/design/curve.ts for PixiJS.
+
+   Colour is a theme, chosen in settings. Every theme names the same
+   tokens, including the three note types, so the menu and the
+   playfield always speak one language. Selectors are attribute-only
+   (not :root-scoped) so a settings preview can nest a whole theme
+   inside one element.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --curve: 22%;
+  --r-24: 5px;
+  --r-28: 6px;
+  --r-36: 8px;
+  --r-44: 10px;
+  --r-56: 12px;
+  --r-76: 17px;
+  --r-96: 21px;
+
+  --focus: var(--cursor);
+}
+
+/* ── paper — white and grey, the default ──────────────────────── */
+[data-theme='paper'] {
+  color-scheme: light;
+
+  --void: #BEBCC6;
+  --ink-900: #FFFFFF;
+  --ink-800: #F1F0F4;
+  --ink-700: #E4E3E9;
+  --line: #D4D2DC;
+
+  --bone: #15131C;
+  --bone-dim: #55525F;
+  --bone-faint: #7B7887;
+
+  --cursor: #E09400;
+  --click: #E0316B;
+  --scroll: #00A184;
+
+  --cursor-ink: #8A5A00;
+  --click-ink: #B51F52;
+  --scroll-ink: #007E68;
+
+  --on-tone: #15131C;
+  --glow-alpha: 0.2;
+  --cover-idle: saturate(0.82);
+}
+
+/* ── graphite — neutral dark ──────────────────────────────────── */
+[data-theme='graphite'] {
+  color-scheme: dark;
+
+  --void: #09090A;
+  --ink-900: #161618;
+  --ink-800: #202024;
+  --ink-700: #2B2B31;
+  --line: #3A3A42;
+
+  --bone: #F2F2F5;
+  --bone-dim: #A8A8B1;
+  --bone-faint: #82828C;
+
+  --cursor: #FFC24A;
+  --click: #FF5F8D;
+  --scroll: #4CE0C4;
+
+  --cursor-ink: var(--cursor);
+  --click-ink: var(--click);
+  --scroll-ink: var(--scroll);
+
+  --on-tone: #161618;
+  --glow-alpha: 0.34;
+  --cover-idle: saturate(0.7) brightness(0.52);
+}
+
+/* ── ultraviolet — deep violet ────────────────────────────────── */
+[data-theme='ultraviolet'] {
+  color-scheme: dark;
+
+  --void: #07050F;
+  --ink-900: #150E30;
+  --ink-800: #1D1443;
+  --ink-700: #281B5B;
+  --line: #3B2A82;
+
+  --bone: #EFE9FF;
+  --bone-dim: #A79BD4;
+  --bone-faint: #8C7FC6;
+
+  --cursor: #FFC24A;
+  --click: #FF5F8D;
+  --scroll: #4CE0C4;
+
+  --cursor-ink: var(--cursor);
+  --click-ink: var(--click);
+  --scroll-ink: var(--scroll);
+
+  --on-tone: #150E30;
+  --glow-alpha: 0.42;
+  --cover-idle: saturate(0.75) brightness(0.5);
+}
+
+/* Difficulty reuses the note palette, coolest to hottest. */
+[data-theme] {
+  --tone-easy: var(--scroll);
+  --tone-normal: var(--cursor);
+  --tone-hard: var(--click);
+
+  --tone-easy-ink: var(--scroll-ink);
+  --tone-normal-ink: var(--cursor-ink);
+  --tone-hard-ink: var(--click-ink);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--void);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: 'Rubik Variable', system-ui, sans-serif;
+  font-weight: 400;
+  color: var(--bone);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+/* Numbers sit in fixed-width squares; they must not jitter as they change. */
+.tnum { font-variant-numeric: tabular-nums; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; }
+}

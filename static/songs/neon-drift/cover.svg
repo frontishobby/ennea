@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="neon-drift placeholder cover">
+  <defs>
+    <linearGradient id="bg" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="hsl(243 64% 8%)" />
+      <stop offset="1" stop-color="hsl(275 56% 22%)" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.7" cy="0.38" r="0.68">
+      <stop offset="0" stop-color="hsl(243 92% 63%)" stop-opacity="0.24" />
+      <stop offset="1" stop-color="hsl(243 92% 63%)" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)" />
+  <rect width="1024" height="1024" fill="url(#glow)" />
+  <rect x="92" y="609.2" width="322.8" height="322.8" rx="71.0" ry="71.0" fill="hsl(31 86% 66%)" opacity="0.94" />
+  <rect x="92" y="92" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="264.4" y="92" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="436.8" y="92" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.2" />
+  <rect x="609.2" y="92" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(31 86% 66%)" opacity="0.7" />
+  <rect x="781.6" y="92" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.92" />
+  <rect x="92" y="264.4" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="264.4" y="264.4" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.92" />
+  <rect x="436.8" y="264.4" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="609.2" y="264.4" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(31 86% 66%)" opacity="0.7" />
+  <rect x="781.6" y="264.4" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="92" y="436.8" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(31 86% 66%)" opacity="0.7" />
+  <rect x="264.4" y="436.8" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.2" />
+  <rect x="436.8" y="436.8" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="609.2" y="436.8" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.92" />
+  <rect x="781.6" y="436.8" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.92" />
+  <rect x="436.8" y="609.2" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="609.2" y="609.2" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="781.6" y="609.2" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+  <rect x="436.8" y="781.6" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.2" />
+  <rect x="609.2" y="781.6" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="hsl(243 92% 63%)" opacity="0.92" />
+  <rect x="781.6" y="781.6" width="150.4" height="150.4" rx="33.1" ry="33.1" fill="none" stroke="hsl(243 76% 54%)" stroke-width="5" opacity="0.45" />
+</svg>
