@@ -30,7 +30,20 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
 `.venv` 생성 → PyTorch(cu126) → ACE-Step → CUDA 확인까지 한 번에 간다.
-끝에 `cuda True` 와 GPU 이름이 찍히는지 본다.
+끝에 GPU 이름과 VRAM이 찍히는지 본다. CUDA를 못 잡으면 0이 아닌 코드로 빠진다.
+
+### `.ps1` 파일은 UTF-8 **BOM**으로 저장한다
+
+Windows PowerShell 5.1(`powershell.exe`)은 **BOM 없는 UTF-8 파일을 현재 코드페이지(한국어는 cp949)로
+읽는다.** 그래서 BOM이 없으면 스크립트는 정상 동작하는데 한글만 전부 깨진다 —
+`세팅` 이 `꽭똿` 처럼 나온다.
+
+편집기가 BOM을 떼지 않게 확인한다 (VS Code 우하단 인코딩 → `UTF-8 with BOM`).
+PowerShell 7(`pwsh`)은 BOM이 없어도 UTF-8로 읽으므로 이 문제가 없다.
+
+한글 문자열은 PowerShell 안에서만 쓴다. `python -c` 인자로 넘기면 코드페이지 변환을
+한 번 더 타서 또 깨질 수 있다 — `setup.ps1`의 확인 단계는 파이썬이 ASCII JSON만
+뱉고 메시지는 PowerShell이 찍는다.
 
 ## 사용
 

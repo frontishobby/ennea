@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
   ENNEA 곡 생성 환경 세팅 (Windows + NVIDIA GPU)
 
@@ -6,6 +6,10 @@
 
   하는 일: .venv 생성 -> PyTorch(cu126) -> ACE-Step -> CUDA 확인.
   체크포인트는 여기서 받지 않는다. generate.py 첫 실행 때 checkpoints/ 로 들어온다.
+
+  !! 이 파일은 반드시 UTF-8 BOM으로 저장한다.
+     Windows PowerShell 5.1은 BOM 없는 UTF-8을 cp949로 읽어서 한글이 전부 깨진다.
+     편집기가 BOM을 떼지 않게 확인한다 (VS Code: "UTF-8 with BOM").
 #>
 
 $ErrorActionPreference = "Stop"
@@ -51,7 +55,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 $python = Find-Python
 if (-not $python) {
     Write-Host "Python을 찾을 수 없다. 3.11을 설치한다 (설치 화면에서 PATH 등록 체크)." -ForegroundColor Red
-    Write-Host "https://www.python.org/downloads/release/python-3119/"
+    Write-Host "https://www.python.org/downloads/"
     exit 1
 }
 Write-Host "Python $($python.Version)"
@@ -89,20 +93,44 @@ Write-Host "ACE-Step 설치..." -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { Write-Host "ACE-Step 설치 실패" -ForegroundColor Red; exit 1 }
 
 # 5. 확인
+# 파이썬 쪽은 ASCII JSON만 뱉는다. 한글이 프로세스 경계를 넘으면
+# 코드페이지 때문에 또 깨진다 — 메시지는 전부 PowerShell에서 찍는다.
 Write-Host ""
 Write-Host "확인" -ForegroundColor Cyan
-& $venvPy -c @"
-import torch
-print('  torch  ', torch.__version__)
-print('  cuda   ', torch.cuda.is_available())
-if torch.cuda.is_available():
-    print('  gpu    ', torch.cuda.get_device_name(0))
-    print('  vram   ', round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1), 'GB')
-else:
-    print('  !! CUDA를 못 잡았다. NVIDIA 드라이버를 최신으로 올리고 다시 확인한다.')
-import acestep
-print('  acestep 설치됨')
+$raw = & $venvPy -c @"
+import json, importlib.util
+info = {'torch': None, 'cuda': False, 'gpu': None, 'vram': None, 'acestep': False}
+try:
+    import torch
+    info['torch'] = torch.__version__
+    info['cuda'] = torch.cuda.is_available()
+    if info['cuda']:
+        info['gpu'] = torch.cuda.get_device_name(0)
+        info['vram'] = round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1)
+except Exception:
+    pass
+info['acestep'] = importlib.util.find_spec('acestep') is not None
+print(json.dumps(info))
 "@
+
+$line = @($raw) | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1
+if (-not $line) {
+    Write-Host "확인 단계 실패 — 파이썬이 응답하지 않았다." -ForegroundColor Red
+    exit 1
+}
+$info = $line | ConvertFrom-Json
+
+Write-Host "  torch    $($info.torch)"
+Write-Host "  acestep  $(if ($info.acestep) { '설치됨' } else { '없음' })"
+if ($info.cuda) {
+    Write-Host "  gpu      $($info.gpu)"
+    Write-Host "  vram     $($info.vram) GB"
+} else {
+    Write-Host "  gpu      못 잡음" -ForegroundColor Red
+    Write-Warning "CUDA를 못 잡았다. NVIDIA 드라이버를 최신으로 올리고 다시 확인한다."
+}
+
+if (-not $info.acestep -or -not $info.cuda) { exit 1 }
 
 Write-Host ""
 Write-Host "끝. 다음:" -ForegroundColor Green
