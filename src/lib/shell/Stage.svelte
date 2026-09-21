@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { STAGE_HEIGHT, STAGE_WIDTH, stageScale } from './viewport'
 
   /**
    * The whole game lives in a 1280x720 logical field (PLAN §3). Everything
@@ -10,14 +11,18 @@
    */
   let { children }: { children: Snippet } = $props()
 
-  const fit = () => Math.min(window.innerWidth / 1280, window.innerHeight / 720)
-  let scale = $state(fit())
+  let scale = $state(stageScale())
 </script>
 
-<svelte:window onresize={() => (scale = fit())} />
+<svelte:window onresize={() => (scale = stageScale())} />
 
 <div class="viewport">
-  <div class="stage" style:transform="scale({scale})">
+  <div
+    class="stage"
+    style:width="{STAGE_WIDTH}px"
+    style:height="{STAGE_HEIGHT}px"
+    style:transform="scale({scale})"
+  >
     {@render children()}
   </div>
 </div>
@@ -34,8 +39,6 @@
 
   .stage {
     position: relative;
-    width: 1280px;
-    height: 720px;
     flex: none;
     transform-origin: center center;
     background: var(--ink-900);

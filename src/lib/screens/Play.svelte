@@ -4,6 +4,7 @@
   import { radiusFor } from '$lib/design/curve'
   import { tokenColor } from '$lib/design/theme'
   import { go } from '$lib/router.svelte'
+  import { stageScale } from '$lib/shell/viewport'
   import Keycap from '$lib/ui/Keycap.svelte'
   import type { ChartRef, Song } from '$lib/songs'
 
@@ -24,8 +25,6 @@
   const LANE_THICKNESS = 76
 
   let host: HTMLDivElement
-
-  const fit = () => Math.min(window.innerWidth / 1280, window.innerHeight / 720)
 
   function field(): Graphics {
     const g = new Graphics()
@@ -69,7 +68,7 @@
         backgroundAlpha: 0,
         antialias: true,
         // The stage is CSS-scaled, so render at the size it actually occupies.
-        resolution: Math.min((window.devicePixelRatio || 1) * fit(), 3),
+        resolution: Math.min((window.devicePixelRatio || 1) * stageScale(), 3),
         autoDensity: true,
       })
       if (disposed) {
