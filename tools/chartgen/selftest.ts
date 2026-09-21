@@ -77,17 +77,18 @@ interface Truth {
 
 /**
  * 드럼 패턴을 만든다. bpmAt(t) 로 템포 곡선을 준다 — 상수면 정박, 램프면 드리프트.
- * 8분음표 시각은 순간 템포를 적분해서 얻는다.
+ * perBeat 는 하이햇 분할: 2 = 8분음표(정박), 3 = 셋잇단 8분음표(셔플).
+ * 격자 시각은 순간 템포를 적분해서 얻는다.
  */
-function synth(bpmAt: (t: number) => number): Truth {
+function synth(bpmAt: (t: number) => number, perBeat = 2): Truth {
   rand = mulberry32(42)
   sig = new Float32Array(SR * DUR)
   const truth: Truth = { kicks: [], snares: [], hatsOff: [], hatsOn: [], beats: [] }
   let t = PHASE
   for (let k = 0; ; k++) {
     if (t > DUR - 1) break
-    const beatIdx = k >> 1
-    const onBeat = (k & 1) === 0
+    const beatIdx = Math.floor(k / perBeat)
+    const onBeat = k % perBeat === 0
     const intro = beatIdx < INTRO_BEATS
     hat(t, intro ? 0.06 : 0.12)
     if (onBeat) {
@@ -103,7 +104,7 @@ function synth(bpmAt: (t: number) => number): Truth {
         }
       }
     } else truth.hatsOff.push(t)
-    t += 60 / bpmAt(t) / 2
+    t += 60 / bpmAt(t) / perBeat
   }
   // 패드 + 노이즈 바닥. 지속음은 온셋이 아니어야 하고, LFO 가 만드는 작은 flux 도 무시돼야 한다.
   for (let i = 0; i < sig.length; i++) {
@@ -234,7 +235,32 @@ const kickErr = drifted.kicks.map((k) => Math.min(...scrollT.map((x) => Math.abs
 kickErr.sort((x, y) => x - y)
 check(kickErr[Math.floor(kickErr.length * 0.9)] < 0.025, `스냅 후 스크롤 노트 ↔ 진짜 킥 p90 ${(kickErr[Math.floor(kickErr.length * 0.9)] * 1000).toFixed(1)}ms (매칭 ${kickErr.length}/${drifted.kicks.length})`)
 
-// 정박 시나리오도 새 그리드로 다시 확인 — 드리프트 기계가 정박을 해치면 안 된다
+// ── 셋잇단: 하이햇을 12분음표(셋잇단 8분)로. 킥·스네어는 비트에 그대로 ────────
+console.log('\n셋잇단 (햇 12분음표, 150 BPM)')
+const trip = synth(() => BPM, 3)
+const tr = analyze(sig, SR)
+const tripSec = tr.grid.tripletSpans().reduce((s, [x, y]) => s + (y - x), 0)
+check(tripSec > DUR * 0.7, `셋잇단 구간 ${tripSec.toFixed(1)}s / ${DUR}s — 대부분이 셋잇단으로 읽혀야 한다`)
+const weakTrip = tr.grid.weakSpans().reduce((s, [x, y]) => s + (y - x), 0)
+check(weakTrip < 2, `박자 흐린 구간 ${weakTrip.toFixed(1)}s (셋잇단은 약한 게 아니라 다른 격자다)`)
+check(Math.abs(tr.grid.meanBpm - BPM) < 1, `평균 BPM ${tr.grid.meanBpm.toFixed(2)} (기대 ${BPM} — 셋잇단이라고 템포가 흔들리면 안 된다)`)
+const tBeatErr = trip.beats.map((b) => Math.min(...tr.grid.beats.map((x) => Math.abs(x - b)))).sort((x, y) => x - y)
+check(tBeatErr[Math.floor(tBeatErr.length * 0.9)] < 0.02, `비트 추적 p90 ${(tBeatErr[Math.floor(tBeatErr.length * 0.9)] * 1000).toFixed(1)}ms`)
+for (const b of ['low', 'mid', 'high'] as const) {
+  const f = tr.fitness[b]
+  check(f.ok, `${b.padEnd(4)} 적합도 정렬 ${(f.align * 100).toFixed(0)}% / 확률 ${(f.chance * 100).toFixed(0)}% → ${f.ok ? '통과' : '탈락'}`)
+}
+const tChart = generate(tr, 'hard', songHash)
+const tBad = validate(tChart)
+const tSt = describe(tChart)
+check(tBad.length === 0, `hard   커서 ${tSt.counts.cursor} 클릭 ${tSt.counts.click} 스크롤 ${tSt.counts.scroll}  ${tSt.nps.toFixed(2)} nps` + (tBad.length ? `\n         ${tBad.slice(0, 5).join('\n         ')}` : ''))
+// 스냅된 클릭 노트가 진짜 뒷박 햇(셋잇단 위치)에 붙었나 — 16분 격자로 잘못 스냅하면 33ms 씩 튄다
+const clickT = tChart.notes.filter((n) => n.type === 'click').map((n) => n.t / 1000)
+const hatErr = trip.hatsOff.map((h) => Math.min(...clickT.map((x) => Math.abs(x - h)))).filter((e) => e < 0.1).sort((x, y) => x - y)
+const hatP90 = hatErr[Math.floor(hatErr.length * 0.9)] ?? Infinity
+check(hatP90 < 0.02, `스냅 후 클릭 노트 ↔ 셋잇단 햇 p90 ${(hatP90 * 1000).toFixed(1)}ms (매칭 ${hatErr.length}/${trip.hatsOff.length}) — 16분으로 잘못 붙였으면 ~34ms`)
+
+// 정박 시나리오도 새 그리드로 다시 확인 — 드리프트·셋잇단 기계가 정박을 해치면 안 된다
 synth(() => BPM)
 
 if (process.argv.includes('--wav')) {
