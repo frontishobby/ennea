@@ -201,6 +201,11 @@ ffmpeg -i out\hard-dance\hard-dance-12345.wav -c:a libopus -b:a 128k -vbr on -ap
 
 ## 프리셋 추가
 
+`drum-forward` 가 채보용 기준선이다 — "벽"이 아니라 "키트"를 시킨다:
+`punchy kick drum on every beat, crisp closed hi-hats on eighth notes, tight snare on 2 and 4,
+short bass stabs, minimal sustain, sparse synth, dry punchy mix`. 새 프리셋은 이걸 변형해서 만든다.
+`future-core` 처럼 `bright supersaw, pitched risers` 가 앞에 오면 저역이 베이스 벽이 돼서 킥이 사라진다.
+
 `presets.json`에 항목을 넣는다. 프롬프트는 콤마로 나눈 태그 나열이고 BPM을 안에 적는다.
 
 ```json

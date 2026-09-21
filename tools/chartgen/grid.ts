@@ -11,6 +11,7 @@
  * 그리드 점을 걸어 나가고, 앵커를 지날 때마다 그 창의 위상 쪽으로 절반만 당긴다.
  * 결과는 연속적인 16분음표 시각 목록 하나다.
  */
+import { mulberry32 } from '../../src/lib/util/prng.ts'
 import type { Onset } from './onset.ts'
 import { estimateTempo } from './tempo.ts'
 
@@ -38,6 +39,16 @@ export interface GridAnchor {
   fitted: boolean
   conf: number
   n: number
+  /** 맞춘 그리드에 센 온셋이 붙은 비율. 못 맞춘 창은 1 — 반박할 증거가 없다. */
+  hitRate: number
+  /**
+   * 귀무 기준선. 같은 개수의 온셋을 무작위 시각으로 바꿔 똑같이 위상을 최적화했을 때의
+   * 정렬률(5회 평균). 위상을 훑어 최대를 고르는 통계라 단일 위상 확률(2·tol/step)보다
+   * 훨씬 높다 — 그걸 기준으로 쓰면 박자 없는 창도 "괜찮음"으로 통과한다.
+   */
+  nullRate: number
+  /** 단일 위상 확률 2·tol/step. 참고용. */
+  chance: number
 }
 
 export interface LocalGrid {
@@ -58,7 +69,22 @@ export interface LocalGrid {
   beatIndexAt: (t: number) => number
   /** 온셋들이 그리드에 얼마나 붙는가. 확률 기준선은 2·tol/step. */
   alignment: (onsets: Onset[], div: 1 | 2 | 4, tolSec: number) => number
+  /**
+   * 시각 t 주변의 리듬 신뢰도 = (정렬률 − 귀무 기준선). 이웃 앵커 사이 선형 보간.
+   * 0.3 이상이면 그리드를 믿고, 0.1 아래면 박자가 없는 구간이다 — 브레이크다운, 라이저, 앰비언트.
+   */
+  marginAt: (t: number) => number
+  /** marginAt < WEAK_MARGIN 인 구간들(초). 보고용. */
+  weakSpans: () => [number, number][]
 }
+
+/**
+ * 이 아래면 그 구간에는 박자가 없다고 본다. 이 위면 그리드를 온전히 믿는다. 사이는 선형.
+ * 실측 (future-core, 귀로 검증): 귀로 맞는 창은 여유 32~53%, 귀로 틀린 브레이크다운 창은
+ * 5~22% 였고 대부분 12% 아래였다. 두 무리 사이 빈틈에 WEAK 를 둔다.
+ */
+export const WEAK_MARGIN = 0.15
+export const SOLID_MARGIN = 0.3
 
 export interface FitInput {
   novelty: Float64Array
@@ -71,10 +97,12 @@ export interface FitInput {
   globalBpm: number
 }
 
+/** 귀무 기준선 반복 횟수 */
+export const NULL_REPS = 5
+
 /** 위상 브루트포스: [0, step) 를 1ms 로 훑어 정렬 개수가 최대인 위상. */
-function fitPhase(onsets: Onset[], step: number, tol: number): { phase: number; hits: number } {
+function fitPhase(ts: number[], step: number, tol: number): { phase: number; hits: number } {
   let best = { phase: 0, hits: -1 }
-  const ts = onsets.map((o) => o.t)
   for (let ph = 0; ph < step; ph += 0.001) {
     let hits = 0
     for (const t of ts) {
@@ -116,18 +144,41 @@ export function fitLocalGrid(input: FitInput): LocalGrid {
 
     let origin: number
     let fitted = false
+    let hitRate = 1
+    let nullRate = 0
+    const tol = Math.min(FIT_TOL_SEC, 0.2 * step)
     if (inWin.length >= MIN_ONSETS_PER_WINDOW) {
-      const { phase } = fitPhase(inWin, step, Math.min(FIT_TOL_SEC, 0.2 * step))
-      origin = phase + Math.round((c - phase) / step) * step
+      const fit = fitPhase(inWin.map((o) => o.t), step, tol)
+      origin = fit.phase + Math.round((c - fit.phase) / step) * step
       fitted = true
+      hitRate = fit.hits / inWin.length
+      // 귀무: 같은 n 개를 창 안에 균일하게 뿌리고 똑같이 최적화. 창 번호로 시드를 고정한다.
+      const rng = mulberry32(0x9e3779b1 ^ (anchors.length * 2654435761))
+      let sum = 0
+      for (let r = 0; r < NULL_REPS; r++) {
+        const fake = inWin.map(() => t0 + rng() * (t1 - t0))
+        sum += fitPhase(fake, step, tol).hits / inWin.length
+      }
+      nullRate = sum / NULL_REPS
     } else if (prev) {
       origin = prev.origin + Math.round((c - prev.origin) / prev.step) * prev.step
     } else {
       origin = c
     }
-    anchors.push({ t: c, step, origin, fitted, conf, n: inWin.length })
+    anchors.push({ t: c, step, origin, fitted, conf, n: inWin.length, hitRate, nullRate, chance: Math.min(1, (2 * tol) / step) })
     if (t1 >= durationSec) break
   }
+
+  // 위상을 못 맞춘 창(온셋 부족)은 가장 가까운 맞춘 창의 신뢰도를 물려받는다.
+  // "증거 없음"을 "완전 신뢰"로 두면 희소한 창 하나가 이웃 브레이크다운을 가려 버린다.
+  const fittedOnes = anchors.filter((a) => a.fitted)
+  if (fittedOnes.length)
+    for (const a of anchors) {
+      if (a.fitted) continue
+      const near = fittedOnes.reduce((p, q) => (Math.abs(q.t - a.t) < Math.abs(p.t - a.t) ? q : p))
+      a.hitRate = near.hitRate
+      a.nullRate = near.nullRate
+    }
 
   // ── 2. 간격 보간 ────────────────────────────────────────────
   const stepAt = (t: number): number => {
@@ -220,6 +271,34 @@ export function fitLocalGrid(input: FitInput): LocalGrid {
     return hit / onsets.length
   }
 
+  const marginOf = (a: GridAnchor) => a.hitRate - a.nullRate
+  const marginAt = (t: number): number => {
+    if (t <= anchors[0].t) return marginOf(anchors[0])
+    for (let i = 1; i < anchors.length; i++) {
+      const a = anchors[i - 1]
+      const b = anchors[i]
+      if (t <= b.t) {
+        const u = (t - a.t) / (b.t - a.t)
+        return marginOf(a) + (marginOf(b) - marginOf(a)) * u
+      }
+    }
+    return marginOf(anchors[anchors.length - 1])
+  }
+  const weakSpans = (): [number, number][] => {
+    const spans: [number, number][] = []
+    let open: number | null = null
+    for (let t = 0; t <= durationSec; t += 0.5) {
+      const weak = marginAt(t) < WEAK_MARGIN
+      if (weak && open === null) open = t
+      if (!weak && open !== null) {
+        spans.push([open, t])
+        open = null
+      }
+    }
+    if (open !== null) spans.push([open, durationSec])
+    return spans
+  }
+
   const steps = anchors.map((a) => a.step)
   const meanStep = steps.reduce((s, v) => s + v, 0) / steps.length
   const bpms = steps.map((s) => 60 / (4 * s))
@@ -234,5 +313,7 @@ export function fitLocalGrid(input: FitInput): LocalGrid {
     nearest,
     beatIndexAt,
     alignment,
+    marginAt,
+    weakSpans,
   }
 }

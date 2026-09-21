@@ -132,6 +132,15 @@ async function main() {
     )
   }
   if (!a.fitness.mid.ok) console.warn('  ! 커서 노트가 없는 채보다. 이 곡은 채보용으로 부적합할 가능성이 높다.')
+  const weak = a.grid.weakSpans()
+  const weakSec = weak.reduce((s, [x, y]) => s + (y - x), 0)
+  if (weak.length)
+    console.log(
+      `  박자 흐린 구간 ${weakSec.toFixed(0)}s / ${a.durationSec.toFixed(0)}s — ` +
+        weak.map(([x, y]) => `${x.toFixed(0)}~${y.toFixed(0)}s`).join(', ') +
+        '  (센 타격만 남기고 스냅 안 함)',
+    )
+  else console.log('  박자 흐린 구간 없음')
 
   if (args.dump) {
     mkdirSync(WORK, { recursive: true })

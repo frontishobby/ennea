@@ -1,13 +1,21 @@
 {
   "version": 1,
-  "_note": "ACE-Step 프롬프트는 콤마로 나눈 태그 나열이고 BPM을 안에 적는다. 온셋 검출이 먹고 사는 게 퍼커션이라 킥/스네어/하이햇을 항상 명시한다.",
+  "_note": "ACE-Step 프롬프트는 콤마로 나눈 태그 나열이고 BPM을 안에 적는다. 온셋 검출이 먹고 사는 게 퍼커션이라 킥/스네어/하이햇을 항상 명시한다. drum-forward 는 채보용 기준선이다 — 벽이 아니라 키트를 시킨다. 새 프리셋을 만들 땐 이것부터 변형한다.",
   "defaults": {
     "lyrics": "[inst]",
-    "durationRange": [120, 140],
+    "durationRange": [
+      120,
+      140
+    ],
     "inferStep": 60,
     "guidanceScale": 15.0
   },
   "presets": [
+    {
+      "id": "drum-forward",
+      "bpm": 140,
+      "prompt": "electronic dance, 140 BPM, punchy kick drum on every beat, crisp closed hi-hats on eighth notes, tight snare on 2 and 4, short bass stabs, minimal sustain, sparse synth, dry punchy mix, instrumental"
+    },
     {
       "id": "hard-dance",
       "bpm": 150,

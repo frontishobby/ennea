@@ -16,6 +16,7 @@ import {
 } from '../../src/lib/chart.ts'
 import { seeded } from '../../src/lib/util/prng.ts'
 import type { Analysis } from './analyze.ts'
+import { SOLID_MARGIN, WEAK_MARGIN } from './grid.ts'
 import type { Onset } from './onset.ts'
 
 export interface DifficultyParams {
@@ -79,9 +80,23 @@ const SECTION_BARS = 8
 const cheb = (ax: number, ay: number, bx: number, by: number) =>
   Math.max(Math.abs(ax - bx), Math.abs(ay - by))
 
-/** 비최대 억제: 센 것부터 받고, 이미 받은 것과 minGap 안이면 버린다. */
-function thin(onsets: Onset[], minGap: number, minRatio: number): Onset[] {
-  const sorted = onsets.filter((o) => o.ratio >= minRatio).sort((a, b) => b.ratio - a.ratio)
+/**
+ * 박자가 흐린 구간에서는 세기 문턱을 올린다. 그리드가 설명 못 하는 온셋에 노트를 찍으면
+ * 리듬게임에서는 "따로 논다"로 들린다 — 브레이크다운은 원래 노트를 비우는 구간이다.
+ * 신뢰도 여유가 SOLID 이상이면 1배, WEAK 이하면 WEAK_RATIO_BOOST 배, 사이는 선형.
+ */
+export const WEAK_RATIO_BOOST = 3
+function ratioBoost(margin: number): number {
+  if (margin >= SOLID_MARGIN) return 1
+  if (margin <= WEAK_MARGIN) return WEAK_RATIO_BOOST
+  const u = (margin - WEAK_MARGIN) / (SOLID_MARGIN - WEAK_MARGIN)
+  return WEAK_RATIO_BOOST + (1 - WEAK_RATIO_BOOST) * u
+}
+
+/** 비최대 억제: 센 것부터 받고, 이미 받은 것과 minGap 안이면 버린다. 문턱은 온셋마다 다를 수 있다. */
+function thin(onsets: Onset[], minGap: number, minRatio: number | ((o: Onset) => number)): Onset[] {
+  const need = typeof minRatio === 'number' ? () => minRatio : minRatio
+  const sorted = onsets.filter((o) => o.ratio >= need(o)).sort((a, b) => b.ratio - a.ratio)
   const kept: Onset[] = []
   for (const o of sorted) {
     if (kept.every((k) => Math.abs(k.t - o.t) >= minGap)) kept.push(o)
@@ -97,11 +112,14 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const div = p.gridDiv as 2 | 4
 
   // 지역 그리드 스냅. 허용치 밖이면 그대로 둔다 — 셋잇단·스윙 보존.
+  // 박자가 흐린 구간에서는 스냅하지 않는다. 못 믿는 그리드로 노트를 옮기면 더 틀린다.
   const snap = (t: number) => {
+    if (grid.marginAt(t) < WEAK_MARGIN) return t
     const g = grid.nearest(t, div)
     const tol = Math.min(0.035, 0.4 * (grid.stepAt(t) * (4 / div)))
     return Math.abs(g - t) <= tol ? g : t
   }
+  const need = (o: Onset) => p.minRatio * ratioBoost(grid.marginAt(o.t))
 
   // 대역 → 타입. 적합도 게이트를 못 넘은 대역은 비운다 — 그리드에 안 붙는 온셋을
   // 스냅하면 노트가 음악 밖으로 밀려나고, 그건 소리로 바로 들린다.
@@ -109,7 +127,7 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   // 스냅은 솎아내기 전에 — 같은 그리드 점으로 몰린 것들이 minGap 에서 정리된다.
   const snapAll = (list: Onset[]) => list.map((o) => ({ ...o, t: snap(o.t) }))
   const gap = (beats: number) => beats * periodSec
-  const cursorSrc0 = thin(snapAll(src('mid')), gap(p.minGapBeats.cursor), p.minRatio)
+  const cursorSrc0 = thin(snapAll(src('mid')), gap(p.minGapBeats.cursor), need)
   const cursorTimes = cursorSrc0.map((o) => o.t)
   const nearCursor = (t: number, within: number) =>
     within > 0 && cursorTimes.some((c) => Math.abs(c - t) < within)
@@ -118,14 +136,14 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const clickSrc0 = thin(
     snapAll(src('high')).filter((o) => !nearCursor(o.t, p.clickCursorExclusion)),
     gap(p.minGapBeats.click),
-    p.minRatio,
+    need,
   )
 
   // 스크롤: 커서 노트 ±50ms 안은 어떤 난이도에서도 안 된다. 바닥 200ms 도 절대.
   const scrollSrc0 = thin(
     snapAll(src('low')).filter((o) => !nearCursor(o.t, SCROLL_CURSOR_EXCLUSION_SEC)),
     Math.max(gap(p.minGapBeats.scroll), SCROLL_FLOOR_SEC),
-    p.minRatio,
+    need,
   )
 
   // 비트당 캡: 세 타입을 합쳐 비트 단위로 묶고 센 것부터 maxPerBeat 개만 남긴다.
@@ -184,9 +202,12 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const cursors: CursorNote[] = []
   let cx = 1
   let cy = 1
-  let prevT: number | undefined
+  let prevMs: number | undefined
   for (const o of cursorSrc) {
-    const dt = prevT === undefined ? Infinity : o.t - prevT
+    // 예산은 채보에 기록되는 정수 ms 로 계산한다. validate() 와 같은 숫자를 봐야
+    // 반올림 1ms 차이로 경계에서 7.5 > 7.5 가 나지 않는다.
+    const tMs = ms(o.t)
+    const dt = prevMs === undefined ? Infinity : (tMs - prevMs) / 1000
     let budget = p.vMax * dt
     if (recentScroll(o.t)) budget *= 0.5
     const maxD = Math.min(2, Math.floor(budget + 1e-9))
@@ -207,8 +228,8 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
         }
       }
     }
-    cursors.push({ t: ms(o.t), type: 'cursor', x: cx, y: cy })
-    prevT = o.t
+    cursors.push({ t: tMs, type: 'cursor', x: cx, y: cy })
+    prevMs = tMs
   }
 
   const order: Record<Note['type'], number> = { cursor: 0, click: 1, scroll: 2 }
