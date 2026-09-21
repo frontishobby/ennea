@@ -24,13 +24,37 @@ ENNEA용 인스트루멘털 트랙을 로컬 GPU에서 뽑는다. 윈도우 + NV
 
 ## 세팅
 
+**PowerShell 창을 먼저 열고** 그 안에서 돌린다. 탐색기에서 더블클릭하면
+끝나는 순간 창이 닫혀서 결과를 못 읽는다.
+
 ```powershell
 cd tools\songgen
 powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-`.venv` 생성 → PyTorch(cu126) → ACE-Step → CUDA 확인까지 한 번에 간다.
-끝에 GPU 이름과 VRAM이 찍히는지 본다. CUDA를 못 잡으면 0이 아닌 코드로 빠진다.
+`.venv` 생성 → PyTorch(cu126) → ACE-Step → 환경 점검까지 한 번에 간다.
+끝에 Enter 대기로 멈춘다 (`-NoPause` 로 끌 수 있다).
+
+성공하면 마지막에 이렇게 나온다:
+
+```
+확인
+  python   3.11.9
+  torch    2.x.x+cu126
+  acestep  설치됨
+  gpu      NVIDIA GeForce RTX 4080
+  vram     16.0 GB
+
+세팅 완료. 다음:
+```
+
+**"세팅 완료"가 안 보이면 끝난 게 아니다.** 환경 점검은 따로 돌려볼 수 있다:
+
+```powershell
+.\.venv\Scripts\python.exe check_env.py
+```
+
+`torch`/`acestep`/`cuda` 상태와 오류 원인이 JSON으로 나온다.
 
 ### `.ps1` 파일은 UTF-8 **BOM**으로 저장한다
 
@@ -42,8 +66,16 @@ Windows PowerShell 5.1(`powershell.exe`)은 **BOM 없는 UTF-8 파일을 현재 
 PowerShell 7(`pwsh`)은 BOM이 없어도 UTF-8로 읽으므로 이 문제가 없다.
 
 한글 문자열은 PowerShell 안에서만 쓴다. `python -c` 인자로 넘기면 코드페이지 변환을
-한 번 더 타서 또 깨질 수 있다 — `setup.ps1`의 확인 단계는 파이썬이 ASCII JSON만
-뱉고 메시지는 PowerShell이 찍는다.
+한 번 더 타서 또 깨질 수 있다 — 환경 점검은 `check_env.py`가 ASCII JSON만 뱉고
+메시지는 PowerShell이 찍는다.
+
+### `$ErrorActionPreference` 를 `Stop` 으로 두지 않는다
+
+Windows PowerShell 5.1은 **네이티브 명령이 stderr 에 한 줄만 써도 그걸 종료 오류로
+올린다.** pip 도 torch 임포트도 경고를 stderr 로 뱉기 때문에, `Stop` 이면 아무 메시지
+없이 스크립트가 죽는다. 두 스크립트 모두 `Continue` 로 두고 `$LASTEXITCODE` 를 매번
+직접 본다. (`$PSNativeCommandUseErrorActionPreference` 는 PS 7.3+ 전용이라 5.1에선
+아무 효과가 없다.)
 
 ## 사용
 

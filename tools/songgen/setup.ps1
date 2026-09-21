@@ -4,7 +4,7 @@
 
   실행:  powershell -ExecutionPolicy Bypass -File setup.ps1
 
-  하는 일: .venv 생성 -> PyTorch(cu126) -> ACE-Step -> CUDA 확인.
+  하는 일: .venv 생성 -> PyTorch(cu126) -> ACE-Step -> 환경 점검.
   체크포인트는 여기서 받지 않는다. generate.py 첫 실행 때 checkpoints/ 로 들어온다.
 
   !! 이 파일은 반드시 UTF-8 BOM으로 저장한다.
@@ -12,12 +12,23 @@
      편집기가 BOM을 떼지 않게 확인한다 (VS Code: "UTF-8 with BOM").
 #>
 
-$ErrorActionPreference = "Stop"
-# PS 7.4+ 는 네이티브 명령의 0 아닌 종료코드를 종료 오류로 올린다.
-# 아래에서 $LASTEXITCODE 를 직접 보고 판단하므로 꺼둔다.
-$PSNativeCommandUseErrorActionPreference = $false
+param([switch]$NoPause)
+
+# ErrorActionPreference 를 Stop 으로 두지 않는다.
+# PS 5.1은 네이티브 명령이 stderr 에 한 줄만 써도 그걸 종료 오류로 올린다.
+# pip 도 torch 임포트도 경고를 stderr 로 뱉기 때문에, Stop 이면 아무 메시지 없이
+# 스크립트가 죽는다. 대신 아래에서 $LASTEXITCODE 를 매번 직접 본다.
+$ErrorActionPreference = "Continue"
 
 Set-Location $PSScriptRoot
+
+function Finish([int]$Code) {
+    if (-not $NoPause) {
+        Write-Host ""
+        try { Read-Host "Enter 를 누르면 창이 닫힌다" | Out-Null } catch { }
+    }
+    exit $Code
+}
 
 Write-Host ""
 Write-Host "ENNEA songgen 세팅" -ForegroundColor Cyan
@@ -48,7 +59,7 @@ function Find-Python {
 # 1. git — ACE-Step을 깃 저장소에서 바로 설치한다
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "git이 없다. https://git-scm.com/download/win 에서 설치하고 다시 실행한다." -ForegroundColor Red
-    exit 1
+    Finish 1
 }
 
 # 2. Python
@@ -56,7 +67,7 @@ $python = Find-Python
 if (-not $python) {
     Write-Host "Python을 찾을 수 없다. 3.11을 설치한다 (설치 화면에서 PATH 등록 체크)." -ForegroundColor Red
     Write-Host "https://www.python.org/downloads/"
-    exit 1
+    Finish 1
 }
 Write-Host "Python $($python.Version)"
 if ($python.Version -match "^3\.(1[3-9]|[2-9]\d)") {
@@ -73,67 +84,77 @@ if (Test-Path ".venv") {
 $venvPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPy)) {
     Write-Host "가상환경 생성 실패. .venv 폴더를 지우고 다시 실행한다." -ForegroundColor Red
-    exit 1
+    Finish 1
 }
 
 # 4. 패키지
 Write-Host ""
 Write-Host "pip 업그레이드..." -ForegroundColor Cyan
 & $venvPy -m pip install --upgrade pip setuptools wheel
-if ($LASTEXITCODE -ne 0) { Write-Host "pip 업그레이드 실패" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "pip 업그레이드 실패" -ForegroundColor Red; Finish 1 }
 
 Write-Host ""
 Write-Host "PyTorch (CUDA 12.6) 설치... 2GB 넘는다, 시간이 걸린다." -ForegroundColor Cyan
 & $venvPy -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-if ($LASTEXITCODE -ne 0) { Write-Host "PyTorch 설치 실패" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "PyTorch 설치 실패" -ForegroundColor Red; Finish 1 }
 
 Write-Host ""
 Write-Host "ACE-Step 설치..." -ForegroundColor Cyan
 & $venvPy -m pip install "git+https://github.com/ace-step/ACE-Step.git"
-if ($LASTEXITCODE -ne 0) { Write-Host "ACE-Step 설치 실패" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "ACE-Step 설치 실패" -ForegroundColor Red; Finish 1 }
 
-# 5. 확인
-# 파이썬 쪽은 ASCII JSON만 뱉는다. 한글이 프로세스 경계를 넘으면
-# 코드페이지 때문에 또 깨진다 — 메시지는 전부 PowerShell에서 찍는다.
+# 5. 환경 점검
+# check_env.py 는 ASCII JSON만 뱉는다. 여러 줄 파이썬 코드를 -c 인자로 넘기면
+# PS 5.1의 네이티브 인자 처리에서 깨질 수 있어 파일로 분리했다.
 Write-Host ""
 Write-Host "확인" -ForegroundColor Cyan
-$raw = & $venvPy -c @"
-import json, importlib.util
-info = {'torch': None, 'cuda': False, 'gpu': None, 'vram': None, 'acestep': False}
-try:
-    import torch
-    info['torch'] = torch.__version__
-    info['cuda'] = torch.cuda.is_available()
-    if info['cuda']:
-        info['gpu'] = torch.cuda.get_device_name(0)
-        info['vram'] = round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1)
-except Exception:
-    pass
-info['acestep'] = importlib.util.find_spec('acestep') is not None
-print(json.dumps(info))
-"@
 
+$raw = & $venvPy (Join-Path $PSScriptRoot "check_env.py") 2>$null
+$exitCode = $LASTEXITCODE
 $line = @($raw) | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1
-if (-not $line) {
-    Write-Host "확인 단계 실패 — 파이썬이 응답하지 않았다." -ForegroundColor Red
-    exit 1
-}
-$info = $line | ConvertFrom-Json
 
-Write-Host "  torch    $($info.torch)"
+if ($exitCode -ne 0 -or -not $line) {
+    Write-Host "환경 점검이 응답하지 않았다 (exit $exitCode)." -ForegroundColor Red
+    Write-Host "직접 돌려보고 오류를 확인한다:"
+    Write-Host "  .\.venv\Scripts\python.exe check_env.py"
+    Finish 1
+}
+
+$info = $null
+try { $info = $line | ConvertFrom-Json } catch { }
+if (-not $info) {
+    Write-Host "환경 점검 출력을 읽지 못했다:" -ForegroundColor Red
+    Write-Host "  $line"
+    Finish 1
+}
+
+Write-Host "  python   $($info.python)"
+Write-Host "  torch    $(if ($info.torch) { $info.torch } else { '없음' })"
 Write-Host "  acestep  $(if ($info.acestep) { '설치됨' } else { '없음' })"
 if ($info.cuda) {
     Write-Host "  gpu      $($info.gpu)"
     Write-Host "  vram     $($info.vram) GB"
 } else {
     Write-Host "  gpu      못 잡음" -ForegroundColor Red
-    Write-Warning "CUDA를 못 잡았다. NVIDIA 드라이버를 최신으로 올리고 다시 확인한다."
+}
+foreach ($e in @($info.errors)) {
+    if ($e) { Write-Host "  !! $e" -ForegroundColor Red }
 }
 
-if (-not $info.acestep -or -not $info.cuda) { exit 1 }
+if (-not $info.torch -or -not $info.acestep) {
+    Write-Host ""
+    Write-Host "설치가 덜 됐다. 위 오류를 보고 다시 실행한다." -ForegroundColor Red
+    Finish 1
+}
+if (-not $info.cuda) {
+    Write-Host ""
+    Write-Warning "패키지는 깔렸는데 CUDA를 못 잡았다. NVIDIA 드라이버를 최신으로 올린다."
+    Write-Warning "이 상태로도 돌긴 하지만 CPU라 곡 하나에 수십 분 걸린다."
+    Finish 1
+}
 
 Write-Host ""
-Write-Host "끝. 다음:" -ForegroundColor Green
+Write-Host "세팅 완료. 다음:" -ForegroundColor Green
 Write-Host "  .\run.ps1 --list"
 Write-Host "  .\run.ps1 hard-dance -n 4"
-Write-Host ""
+Finish 0
