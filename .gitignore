@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+.svelte-kit/
+.vite/
+
+# 채보 생성 작업 디렉터리 (무손실 원본은 커밋하지 않는다)
+tools/chartgen/work/
+*.wav
+*.flac
