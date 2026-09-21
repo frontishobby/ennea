@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "_note": "ACE-Step 프롬프트는 콤마로 나눈 태그 나열이고 BPM을 안에 적는다. 온셋 검출이 먹고 사는 게 퍼커션이라 킥/스네어/하이햇을 항상 명시한다.",
+  "defaults": {
+    "lyrics": "[inst]",
+    "durationRange": [120, 140],
+    "inferStep": 60,
+    "guidanceScale": 15.0
+  },
+  "presets": [
+    {
+      "id": "hard-dance",
+      "bpm": 150,
+      "prompt": "hard dance, electronic, 150 BPM, punchy kick, tight snare, crisp hi-hats, sidechain compression, supersaw lead, driving, clean mix, instrumental"
+    },
+    {
+      "id": "drum-and-bass",
+      "bpm": 174,
+      "prompt": "drum and bass, 174 BPM, breakbeat, sharp snare, rolling sub bass, fast hi-hats, amen break, energetic, clean mix, instrumental"
+    },
+    {
+      "id": "future-core",
+      "bpm": 160,
+      "prompt": "future core, hardcore, 160 BPM, four on the floor kick, layered snare, bright supersaw, pitched risers, clean transients, instrumental"
+    },
+    {
+      "id": "tech-house",
+      "bpm": 128,
+      "prompt": "tech house, 128 BPM, groovy kick, crisp closed hi-hats, rimshot percussion, deep bassline, tight groove, clean mix, instrumental"
+    },
+    {
+      "id": "hardstyle",
+      "bpm": 150,
+      "prompt": "hardstyle, 150 BPM, distorted kick, reverse bass, hard snare, screeching lead, euphoric melody, punchy, instrumental"
+    },
+    {
+      "id": "chiptune-rave",
+      "bpm": 140,
+      "prompt": "chiptune rave, 8-bit, 140 BPM, square lead, arcade melody, punchy kick, noise snare, fast arpeggio, energetic, instrumental"
+    },
+    {
+      "id": "psytrance",
+      "bpm": 145,
+      "prompt": "psytrance, 145 BPM, relentless kick, rolling bassline, tight off-beat hi-hats, acid lead, hypnotic, mechanical groove, instrumental"
+    },
+    {
+      "id": "synthwave",
+      "bpm": 118,
+      "prompt": "synthwave, retrowave, 118 BPM, gated reverb snare, steady kick, analog arpeggio, neon pads, clear drum transients, instrumental"
+    }
+  ]
+}

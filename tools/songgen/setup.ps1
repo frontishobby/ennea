@@ -1,0 +1,111 @@
+#Requires -Version 5.1
+<#
+  ENNEA 곡 생성 환경 세팅 (Windows + NVIDIA GPU)
+
+  실행:  powershell -ExecutionPolicy Bypass -File setup.ps1
+
+  하는 일: .venv 생성 -> PyTorch(cu126) -> ACE-Step -> CUDA 확인.
+  체크포인트는 여기서 받지 않는다. generate.py 첫 실행 때 checkpoints/ 로 들어온다.
+#>
+
+$ErrorActionPreference = "Stop"
+# PS 7.4+ 는 네이티브 명령의 0 아닌 종료코드를 종료 오류로 올린다.
+# 아래에서 $LASTEXITCODE 를 직접 보고 판단하므로 꺼둔다.
+$PSNativeCommandUseErrorActionPreference = $false
+
+Set-Location $PSScriptRoot
+
+Write-Host ""
+Write-Host "ENNEA songgen 세팅" -ForegroundColor Cyan
+Write-Host ""
+
+function Find-Python {
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        foreach ($v in @("3.11", "3.10", "3.12")) {
+            try {
+                $out = & py "-$v" -c "import sys; print(sys.version.split()[0])" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $out) {
+                    return [pscustomobject]@{ Exe = "py"; Args = @("-$v"); Version = "$out".Trim() }
+                }
+            } catch { }
+        }
+    }
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        try {
+            $out = & python -c "import sys; print(sys.version.split()[0])" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $out) {
+                return [pscustomobject]@{ Exe = "python"; Args = @(); Version = "$out".Trim() }
+            }
+        } catch { }
+    }
+    return $null
+}
+
+# 1. git — ACE-Step을 깃 저장소에서 바로 설치한다
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "git이 없다. https://git-scm.com/download/win 에서 설치하고 다시 실행한다." -ForegroundColor Red
+    exit 1
+}
+
+# 2. Python
+$python = Find-Python
+if (-not $python) {
+    Write-Host "Python을 찾을 수 없다. 3.11을 설치한다 (설치 화면에서 PATH 등록 체크)." -ForegroundColor Red
+    Write-Host "https://www.python.org/downloads/release/python-3119/"
+    exit 1
+}
+Write-Host "Python $($python.Version)"
+if ($python.Version -match "^3\.(1[3-9]|[2-9]\d)") {
+    Write-Warning "ACE-Step은 3.10/3.11에서 가장 안정적이다. 설치가 깨지면 3.11을 따로 깐다."
+}
+
+# 3. 가상환경
+if (Test-Path ".venv") {
+    Write-Host ".venv 가 이미 있다 — 재사용한다."
+} else {
+    Write-Host "가상환경 생성 중..."
+    & $python.Exe @($python.Args + @("-m", "venv", ".venv"))
+}
+$venvPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $venvPy)) {
+    Write-Host "가상환경 생성 실패. .venv 폴더를 지우고 다시 실행한다." -ForegroundColor Red
+    exit 1
+}
+
+# 4. 패키지
+Write-Host ""
+Write-Host "pip 업그레이드..." -ForegroundColor Cyan
+& $venvPy -m pip install --upgrade pip setuptools wheel
+if ($LASTEXITCODE -ne 0) { Write-Host "pip 업그레이드 실패" -ForegroundColor Red; exit 1 }
+
+Write-Host ""
+Write-Host "PyTorch (CUDA 12.6) 설치... 2GB 넘는다, 시간이 걸린다." -ForegroundColor Cyan
+& $venvPy -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+if ($LASTEXITCODE -ne 0) { Write-Host "PyTorch 설치 실패" -ForegroundColor Red; exit 1 }
+
+Write-Host ""
+Write-Host "ACE-Step 설치..." -ForegroundColor Cyan
+& $venvPy -m pip install "git+https://github.com/ace-step/ACE-Step.git"
+if ($LASTEXITCODE -ne 0) { Write-Host "ACE-Step 설치 실패" -ForegroundColor Red; exit 1 }
+
+# 5. 확인
+Write-Host ""
+Write-Host "확인" -ForegroundColor Cyan
+& $venvPy -c @"
+import torch
+print('  torch  ', torch.__version__)
+print('  cuda   ', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('  gpu    ', torch.cuda.get_device_name(0))
+    print('  vram   ', round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1), 'GB')
+else:
+    print('  !! CUDA를 못 잡았다. NVIDIA 드라이버를 최신으로 올리고 다시 확인한다.')
+import acestep
+print('  acestep 설치됨')
+"@
+
+Write-Host ""
+Write-Host "끝. 다음:" -ForegroundColor Green
+Write-Host "  .\run.ps1 --list"
+Write-Host "  .\run.ps1 hard-dance -n 4"
+Write-Host ""
