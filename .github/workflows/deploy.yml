@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages 배포에 필요한 최소 권한
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포가 겹치지 않게 한다. 진행 중인 건 취소하지 않는다 —
+# 배포 도중에 끊기면 사이트가 반쯤 올라간 상태로 남는다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # 타입이 깨진 채로 배포되지 않게 막는다
+      - run: npm run check
+
+      # 커스텀 도메인이라 사이트가 루트에서 서빙된다.
+      # base는 '/' (기본값)이므로 BASE_PATH를 주지 않는다.
+      - run: npm run build
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

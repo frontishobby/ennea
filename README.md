@@ -25,7 +25,15 @@ npm run build
 npm run gen:covers   # 플레이스홀더 자켓 재생성
 ```
 
-GitHub Pages 프로젝트 사이트로 배포할 때는 `BASE_PATH=/ennea/ npm run build`.
+## 배포
+
+`main`에 푸시하면 GitHub Actions가 빌드해서 **https://ennea.duckdns.org** 에 올린다.
+`npm run check`가 먼저 돌기 때문에 타입이 깨진 채로는 배포되지 않는다.
+
+커스텀 도메인이라 사이트가 루트에서 서빙되고, 따라서 `base`는 `/`다.
+`<user>.github.io/ennea/` 형태로 서빙할 일이 생기면 그때만 `BASE_PATH=/ennea/ npm run build`.
+
+도메인은 `static/CNAME`으로도 고정해 둔다 — 저장소 설정만 믿으면 재배포 때 풀리는 경우가 있다.
 
 ## 디자인 규칙
 
