@@ -7,7 +7,8 @@
  * src/lib/paths.ts changes.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { hash32, hueOf } from '../src/lib/design/hue.ts'
+import { hueOf } from '../src/lib/design/hue.ts'
+import { hash32 } from '../src/lib/util/prng.ts'
 import { CURVE } from '../src/lib/design/curve.ts'
 
 const SIZE = 1024

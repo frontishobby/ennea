@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../../src/lib/chart.ts", "../../src/lib/util/prng.ts"]
+}

@@ -1,8 +1,7 @@
 import { SONG_INDEX_URL } from './paths'
+import { DIFFICULTIES, type Difficulty } from './chart'
 
-/** Expert is deliberately absent for now; hard is the ceiling. */
-export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const
-export type Difficulty = (typeof DIFFICULTIES)[number]
+export { DIFFICULTIES, type Difficulty }
 
 export interface ChartRef {
   difficulty: Difficulty

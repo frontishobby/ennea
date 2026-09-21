@@ -6,8 +6,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
-    "gen:covers": "node scripts/gen-covers.ts"
+    "check": "svelte-check --tsconfig ./tsconfig.json && tsc -p tools/chartgen",
+    "gen:covers": "node scripts/gen-covers.ts",
+    "chart": "node tools/chartgen/main.ts",
+    "chart:selftest": "node tools/chartgen/selftest.ts"
   },
   "type": "module",
   "devDependencies": {
