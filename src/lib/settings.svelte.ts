@@ -14,15 +14,25 @@ export const THEME_LABELS: { [K in Theme]: string } = {
 
 const KEY = 'ennea.settings'
 const VERSION = 1
-const DEFAULTS = { theme: 'paper' as Theme }
+const DEFAULTS = {
+  theme: 'paper' as Theme,
+  /**
+   * 플레이어 캘리브레이션(ms). 양수면 "소리가 늦게 들린다" — 블루투스 이어폰은
+   * 100~300ms 밀린다. 측정 화면은 아직 없고 값 자리만 둔다 (PLAN §5).
+   */
+  audioOffsetMs: 0,
+}
 
 function load(): typeof DEFAULTS {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return { ...DEFAULTS }
-    const parsed = JSON.parse(raw) as { version: number; theme: Theme }
+    const parsed = JSON.parse(raw) as { version: number; theme: Theme; audioOffsetMs: number }
     if (parsed.version !== VERSION) return { ...DEFAULTS }
-    return { theme: THEMES.includes(parsed.theme) ? parsed.theme : DEFAULTS.theme }
+    return {
+      theme: THEMES.includes(parsed.theme) ? parsed.theme : DEFAULTS.theme,
+      audioOffsetMs: Number.isFinite(parsed.audioOffsetMs) ? parsed.audioOffsetMs : 0,
+    }
   } catch {
     return { ...DEFAULTS }
   }

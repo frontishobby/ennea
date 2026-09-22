@@ -49,12 +49,27 @@ npm run gen:covers   # 플레이스홀더 자켓 재생성
 
 ## 현재 상태
 
-M0 스캐폴딩 + 곡 선택 화면까지.
+M0 스캐폴딩 · M1 타이밍 코어 · M3 채보 생성기까지. 실제 곡 한 곡으로 플레이된다.
 
-- 1280×720 고정 스테이지 + 레터박스 셸
-- 곡 선택 — 1024×1024 자켓 캐러셀(좌우 순환), 난이도 선택(easy/normal/hard), 기록 슬롯
-- 설정 — 테마 전환 (감도·오디오 오프셋은 M1/M2에서 합류)
-- 플레이 화면 — 3×3 그리드와 레인만 그린 빈 씬. 오디오·판정·노트는 M1
+- 1280×720 고정 스테이지 + 레터박스 셸 (1배를 넘겨 확대하지 않는다)
+- 곡 선택 — 1024×1024 자켓 캐러셀(좌우 순환), 난이도 easy/normal/hard, 미리듣기
+- 설정 — 테마 전환 (감도는 M2, 캘리브레이션 화면은 아직)
+- **플레이 — 판정이 돈다.** AudioClock 기준 판정, rAF 렌더, 이벤트 timeStamp 입력
+- 채보 생성기 — 음원 WAV 하나에서 난이도 셋. `tools/chartgen/README.md`
+- 곡 생성기 — ACE-Step 로컬 실행 (윈도우+NVIDIA). `tools/songgen/README.md`
 
-`static/songs.json`과 `static/songs/*/cover.svg`는 **플레이스홀더**다. 음원과 채보는 아직 없고,
-파일 안에 `placeholder: true`로 표시돼 있다. 곡 선택 화면 하단에도 그대로 표시된다. M8에서 교체한다.
+`static/songs/prism/` 이 실제 곡이고, 나머지 여덟은 `placeholder: true` 로 표시된 자리표시자다
+(곡 선택 레이아웃용). M8 에서 채운다.
+
+### 검증
+
+```bash
+npm run game:test          # 판정 — 완벽한 입력이면 전부 PERFECT 인가
+npm run chart:selftest     # 채보 생성기 — 합성 신호(정박/드리프트/셋잇단)
+npm run check              # svelte-check + tsc
+node tools/probe.mjs http://localhost:5173/ /tmp/shots Enter   # 스크린샷 + 콘솔 오류
+```
+
+`?autoplay=1` 을 붙이면 노트 시각에 맞춰 입력이 자동으로 들어간다. 실제 입력과 같은 경로라
+**정확도가 100% 가 아니면 시계가 틀린 것이다** — 브라우저에서 AudioClock 을 검증하는 방법이고,
+나중에 레퍼런스 고스트에도 쓴다.

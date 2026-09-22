@@ -9,7 +9,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc -p tools/chartgen",
     "gen:covers": "node scripts/gen-covers.ts",
     "chart": "node tools/chartgen/main.ts",
-    "chart:selftest": "node tools/chartgen/selftest.ts"
+    "chart:selftest": "node tools/chartgen/selftest.ts",
+    "game:test": "node tools/gametest.ts"
   },
   "type": "module",
   "devDependencies": {

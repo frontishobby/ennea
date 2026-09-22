@@ -1,114 +1,158 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Application, Graphics } from 'pixi.js'
-  import { radiusFor } from '$lib/design/curve'
-  import { tokenColor } from '$lib/design/theme'
-  import { go } from '$lib/router.svelte'
-  import { stageScale } from '$lib/shell/viewport'
-  import Keycap from '$lib/ui/Keycap.svelte'
+  import { AudioClock } from '$lib/audio/clock'
+  import { preview } from '$lib/audio/preview.svelte'
   import type { ChartRef, Song } from '$lib/songs'
+  import { loadChart } from '$lib/songs'
+  import { audioUrl } from '$lib/paths'
+  import type { Chart } from '$lib/chart'
+  import { go } from '$lib/router.svelte'
+  import { settings } from '$lib/settings.svelte'
+  import { stageScale } from '$lib/shell/viewport'
+  import { InputCollector } from '$lib/game/input'
+  import { Playfield } from '$lib/game/render'
+  import { kindOf, Session } from '$lib/game/session'
+  import { cellBox } from '$lib/game/layout'
+  import type { Grade } from '$lib/game/judge'
+  import Keycap from '$lib/ui/Keycap.svelte'
 
   /**
-   * The empty playfield from M0: the 3x3 cursor grid, the click lanes either
-   * side and the scroll lanes above and below (PLAN §3). Same curvature law as
-   * the menu, drawn with roundRect so Pixi and CSS agree on the corner.
-   * No audio, no notes, no judgement — that is M1.
+   * M1 타이밍 코어 (PLAN §5, §13).
+   *
+   * 판정은 AudioClock 기준, 렌더는 rAF — 둘을 섞지 않는다. 입력은 이벤트의
+   * timeStamp 로 큐에 들어가고 rAF 는 소비만 한다. 여기서 확인할 것은 하나다:
+   * **노트가 음악에 맞게 떨어지는가.** 이게 안 되면 나머지가 무의미하다.
    */
-  let { song, chart }: { song: Song; chart: ChartRef } = $props()
+  let { song, chart: ref }: { song: Song; chart: ChartRef } = $props()
 
-  const CELL = 132
-  const GAP = 12
-  const GRID = CELL * 3 + GAP * 2
-  const LEFT = (1280 - GRID) / 2
-  const TOP = (720 - GRID) / 2
-  const LANE_GAP = 24
-  const LANE_THICKNESS = 76
+  /** 시작 전 여유(ms). 카운트다운이 돌고 첫 노트가 미리 떨어진다. */
+  const LEAD_MS = 3000
+
+  /**
+   * ?autoplay=1 이면 노트 시각에 맞춰 입력을 자동으로 넣는다. 실제 입력과 **같은 경로**로
+   * 들어가므로, 정확도가 100% 가 아니면 시계가 틀린 것이다 — 브라우저에서 AudioClock 을
+   * 검증하는 유일한 방법이다. 나중에 레퍼런스 고스트에도 쓴다 (PLAN §9).
+   */
+  const autoplay =
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('autoplay')
+
+  type Phase = 'loading' | 'countdown' | 'playing' | 'done' | 'failed'
+  let phase = $state<Phase>('loading')
+  let error = $state('')
+  let countdown = $state(3)
+  let hud = $state({ score: 0, combo: 0, accuracy: 1, judged: 0, total: 0 })
+  let lastGrade = $state<Grade | null>(null)
+  let lastDelta = $state(0)
 
   let host: HTMLDivElement
 
-  function field(): Graphics {
-    const g = new Graphics()
-    const CURSOR = tokenColor('--cursor', 0xffc24a)
-    const CLICK = tokenColor('--click', 0xff5f8d)
-    const SCROLL = tokenColor('--scroll', 0x4ce0c4)
-
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 3; col++) {
-        g.roundRect(
-          LEFT + col * (CELL + GAP),
-          TOP + row * (CELL + GAP),
-          CELL,
-          CELL,
-          radiusFor(CELL),
-        )
-      }
-    }
-    g.stroke({ width: 2, color: CURSOR, alpha: 0.26 })
-
-    g.roundRect(LEFT, TOP - LANE_GAP - LANE_THICKNESS, GRID, LANE_THICKNESS, radiusFor(LANE_THICKNESS))
-    g.roundRect(LEFT, TOP + GRID + LANE_GAP, GRID, LANE_THICKNESS, radiusFor(LANE_THICKNESS))
-    g.stroke({ width: 2, color: SCROLL, alpha: 0.34 })
-
-    g.roundRect(LEFT - LANE_GAP - LANE_THICKNESS, TOP, LANE_THICKNESS, GRID, radiusFor(LANE_THICKNESS))
-    g.roundRect(LEFT + GRID + LANE_GAP, TOP, LANE_THICKNESS, GRID, radiusFor(LANE_THICKNESS))
-    g.stroke({ width: 2, color: CLICK, alpha: 0.34 })
-
-    return g
-  }
-
   onMount(() => {
-    let app: Application | undefined
     let disposed = false
+    let clock: AudioClock | undefined
+    let field: Playfield | undefined
+    let input: InputCollector | undefined
+    let frame = 0
 
-    const start = async () => {
-      const created = new Application()
-      await created.init({
-        width: 1280,
-        height: 720,
-        backgroundAlpha: 0,
-        antialias: true,
-        // The stage is CSS-scaled, so render at the size it actually occupies.
-        resolution: Math.min((window.devicePixelRatio || 1) * stageScale(), 3),
-        autoDensity: true,
-      })
+    const run = async () => {
+      const chart: Chart = await loadChart(ref.chartHash)
+      if (disposed) return
+
+      clock = new AudioClock()
+      clock.offsets = {
+        audioOffsetMs: chart.audioOffsetMs,
+        userOffsetMs: settings.audioOffsetMs ?? 0,
+      }
+      // 미리듣기가 이미 받아 둔 버퍼가 있으면 그대로 쓴다 — 곡을 두 번 받지 않는다.
+      const cached = preview.cached(song.slug)
+      const bytes = cached ?? (await (await fetch(audioUrl(song.slug))).arrayBuffer())
+      if (disposed) return
+      await clock.load(bytes)
+      await clock.resume()
+      if (disposed) return
+
+      const session = new Session(chart)
+      hud.total = chart.notes.length
+
+      input = new InputCollector({ toSongMs: (perfMs) => clock!.songTimeOf(perfMs) })
+      input.attach(host)
+      field = await Playfield.create(host, stageScale())
       if (disposed) {
-        created.destroy(true)
+        field.destroy()
         return
       }
-      app = created
-      host.appendChild(created.canvas)
-      created.stage.addChild(field())
 
-      const cursor = new Graphics()
-        .roundRect(-22, -22, 44, 44, radiusFor(44))
-        .fill({ color: tokenColor('--cursor', 0xffc24a), alpha: 0.9 })
-      cursor.position.set(640, 360)
-      created.stage.addChild(cursor)
+      preview.stop()
+      clock.start(LEAD_MS)
+      phase = 'countdown'
 
-      // Pointer Lock and logical-coordinate accumulation arrive at M2; until
-      // then the cursor just tracks the pointer through the stage scale.
-      const track = (event: PointerEvent) => {
-        const rect = created.canvas.getBoundingClientRect()
-        cursor.position.set(
-          ((event.clientX - rect.left) / rect.width) * 1280,
-          ((event.clientY - rect.top) / rect.height) * 720,
-        )
+      const endsAt = chart.notes.length ? chart.notes[chart.notes.length - 1]!.t + 2000 : 0
+      let autoAt = 0
+      const tick = () => {
+        if (disposed || !clock || !field || !input) return
+        frame = requestAnimationFrame(tick)
+        const songMs = clock.now()
+
+        if (songMs < 0) {
+          countdown = Math.max(1, Math.ceil(-songMs / 1000))
+        } else if (phase === 'countdown') {
+          phase = 'playing'
+        }
+
+        if (autoplay) {
+          while (autoAt < chart.notes.length && chart.notes[autoAt]!.t <= songMs) {
+            const note = chart.notes[autoAt]!
+            autoAt++
+            if (note.type === 'cursor') {
+              const b = cellBox(note.x, note.y)
+              input.injectCursor(note.t, b.cx, b.cy)
+            } else {
+              input.inject(kindOf(note)!, note.t)
+            }
+          }
+        }
+
+        session.update(songMs, input.drain(), (ms) => input!.cursorAt(ms))
+        for (const j of session.fresh) {
+          field.mark(songMs, j.note, j.grade)
+          lastGrade = j.grade
+          lastDelta = j.deltaMs
+        }
+        session.fresh.length = 0
+
+        field.draw(songMs, session.notes, session.head, input.cursor)
+        hud.score = session.tally.score
+        hud.combo = session.tally.combo
+        hud.accuracy = session.tally.accuracy
+        hud.judged = session.tally.perfect + session.tally.great + session.tally.good + session.tally.miss
+
+        if (phase === 'playing' && (session.done || songMs > endsAt)) {
+          phase = 'done'
+          clock.stop()
+        }
       }
-      host.addEventListener('pointermove', track)
-      created.canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+      frame = requestAnimationFrame(tick)
     }
 
-    void start()
+    void run().catch((e) => {
+      if (disposed) return
+      phase = 'failed'
+      error = e instanceof Error ? e.message : String(e)
+    })
 
     return () => {
       disposed = true
-      app?.destroy(true, { children: true })
+      cancelAnimationFrame(frame)
+      input?.detach()
+      field?.destroy()
+      void clock?.close()
     }
   })
 
   function onKey(event: KeyboardEvent) {
     if (event.key === 'Escape') go({ screen: 'select' })
   }
+
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -118,15 +162,49 @@
 
   <div class="now">
     <span class="title">{song.title}</span>
-    <span class="chart">{chart.difficulty} {chart.level}</span>
+    <span class="chart">{ref.difficulty} {ref.level}</span>
   </div>
 
-  <p class="status">
-    The playfield is drawn, nothing is running yet. Audio, the judgement clock and note
-    rendering land at M1.
-  </p>
+  {#if phase === 'playing' || phase === 'done'}
+    <div class="hud">
+      <span class="score tnum">{hud.score.toLocaleString('en-US')}</span>
+      <span class="acc tnum">{pct(hud.accuracy)}</span>
+      <span class="progress tnum">{hud.judged} / {hud.total}</span>
+    </div>
+    <div class="feed">
+      {#if hud.combo > 2}
+        <span class="combo tnum">{hud.combo}</span>
+      {/if}
+      {#if lastGrade}
+        <span class="grade {lastGrade}">
+          {lastGrade}
+          {#if lastGrade !== 'miss' && lastDelta}
+            <span class="delta tnum">{lastDelta > 0 ? '+' : ''}{lastDelta.toFixed(0)}ms</span>
+          {/if}
+        </span>
+      {/if}
+    </div>
+  {/if}
 
-  <footer><Keycap label="Esc" /> back to song select</footer>
+  {#if phase === 'loading'}
+    <p class="centre">Loading the chart…</p>
+  {:else if phase === 'countdown'}
+    <p class="centre count tnum">{countdown}</p>
+  {:else if phase === 'failed'}
+    <p class="centre fail">Couldn't start — {error}</p>
+  {:else if phase === 'done'}
+    <div class="centre summary">
+      <p class="headline tnum">{pct(hud.accuracy)}</p>
+      <p class="detail tnum">{hud.score.toLocaleString('en-US')} points</p>
+      <p class="detail">Esc to pick another song</p>
+    </div>
+  {/if}
+
+  <footer>
+    <Keycap label="Z" /><Keycap label="X" /> click ·
+    <Keycap label="W" /><Keycap label="S" /> scroll ·
+    <Keycap label="Esc" /> back
+  </footer>
 </div>
 
 <style>
@@ -160,16 +238,107 @@
     color: var(--bone-faint);
   }
 
-  .status {
+  .hud {
     position: absolute;
-    top: 26px;
+    top: 22px;
     right: 40px;
-    margin: 0;
-    max-width: 320px;
-    text-align: right;
-    font-size: 12px;
-    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .score {
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .acc {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--bone-dim);
+  }
+
+  .progress {
+    font-size: 11px;
     color: var(--bone-faint);
+  }
+
+  /* 플레이 영역 밖. 그리드 위에 글자를 올리면 노트를 가린다. */
+  .feed {
+    position: absolute;
+    top: 62px;
+    left: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    pointer-events: none;
+  }
+
+  .combo {
+    font-size: 40px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--bone);
+    opacity: 0.35;
+  }
+
+  .grade {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .grade .delta {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--bone-faint);
+  }
+
+  .grade.perfect { color: var(--cursor); }
+  .grade.great { color: var(--scroll); }
+  .grade.good { color: var(--bone-dim); }
+  .grade.miss { color: var(--click); }
+
+  .centre {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 4px;
+    margin: 0;
+    text-align: center;
+    font-size: 15px;
+    color: var(--bone-dim);
+    pointer-events: none;
+  }
+
+  .count {
+    font-size: 96px;
+    font-weight: 800;
+    color: var(--bone);
+    opacity: 0.5;
+  }
+
+  .fail {
+    color: var(--click);
+  }
+
+  .summary .headline {
+    margin: 0;
+    font-size: 64px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--bone);
+  }
+
+  .summary .detail {
+    margin: 0;
+    font-size: 14px;
+    color: var(--bone-dim);
   }
 
   footer {

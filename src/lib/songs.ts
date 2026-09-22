@@ -1,4 +1,5 @@
-import { SONG_INDEX_URL } from './paths'
+import { chartUrl, SONG_INDEX_URL } from './paths'
+import { CHART_VERSION, type Chart } from './chart'
 import { DIFFICULTIES, type Difficulty } from './chart'
 
 export { DIFFICULTIES, type Difficulty }
@@ -52,4 +53,17 @@ export async function loadSongIndex(): Promise<SongIndex> {
 export function formatDuration(ms: number): string {
   const total = Math.round(ms / 1000)
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * 채보를 받는다. 파일 내용이 곧 정규 직렬화라 sha256(파일) == chartHash 이지만,
+ * 서버 랭킹이 없어 조작 동기가 없으므로 검증은 하지 않는다 (PLAN §10).
+ */
+export async function loadChart(chartHash: string): Promise<Chart> {
+  const res = await fetch(chartUrl(chartHash))
+  if (!res.ok) throw new Error(`chart ${chartHash} responded ${res.status}`)
+  const chart = (await res.json()) as Chart
+  if (chart.version !== CHART_VERSION)
+    throw new Error(`chart is version ${chart.version}, expected ${CHART_VERSION}`)
+  return chart
 }
