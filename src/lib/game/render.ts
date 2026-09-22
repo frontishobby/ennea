@@ -1,37 +1,51 @@
 /**
  * 플레이필드 렌더 (PixiJS).
  *
- * 노트는 과녁 위로 **줄어들며 겹쳐 오는 정사각형 윤곽**이다. 윤곽이 과녁과 정확히
- * 포개지는 순간이 판정 시점 — 눈으로 일치를 읽기 가장 쉬운 형태고, 한 과녁에 여러
- * 노트가 몰려도 동심 사각형으로 겹쳐서 밀도를 견딘다.
+ * 큰 정사각형 하나가 전부다. 네 변이 판정선이고, 이산 노트는 바깥에서 밀려와
+ * **앞면이 변에 닿는 순간**이 판정 시점이다 — 선과 선이 만나는 순간이라 눈으로 읽기 쉽다.
+ * 커서 노트만 사각형 안에서 줄어들며 내려앉는다.
  *
  * 여기서는 시간을 **인자로만** 받는다. 렌더가 시계를 읽으면 rAF 지터가 판정에 섞인다.
  */
 import { Application, Container, Graphics } from 'pixi.js'
 import { tokenColor } from '../design/theme.ts'
-import { STAGE_HEIGHT, STAGE_WIDTH } from '../shell/viewport.ts'
 import type { Grade } from './judge.ts'
-import { CELL, CELL_GAP, GRID_LEFT, GRID_TOP, LANE, radiusOf, targetOf } from './layout.ts'
+import {
+  CELL,
+  laneBox,
+  laneOf,
+  LANES,
+  radiusOf,
+  SQ_BOTTOM,
+  SQ_LEFT,
+  SQ_RADIUS,
+  SQ_RIGHT,
+  SQ_TOP,
+  SQUARE,
+  STAGE_H,
+  STAGE_W,
+  targetOf,
+} from './layout.ts'
 import type { NoteState } from './session.ts'
 
 /**
- * 타입마다 접근이 다르다.
- *
- * 커서 노트는 칸이 서로 붙어 있고(간격 144px) 밀도가 높아서(초당 3~4개) 크고 긴 접근을
- * 쓰면 사각형들이 그리드를 덮어 어느 칸인지 안 읽힌다. 커서는 애초에 **연속 입력**이라
- * 매 노트에 반응하는 게 아니라 궤적을 따라가는 것이므로 짧고 작아도 된다.
- * 클릭·스크롤은 과녁이 멀찍이 떨어져 있어 동심으로 겹쳐도 읽힌다.
+ * 이산 노트는 **일정한 리드 타임**으로 온다. 변까지의 거리가 달라서(좌우 460px,
+ * 위아래 180px) 속도는 달라지지만, 반응 시간이 같은 쪽이 플레이에 중요하다.
  */
-const APPROACH: Record<'cursor' | 'click' | 'scroll', { ms: number; scale: number }> = {
-  cursor: { ms: 600, scale: 1.8 },
-  click: { ms: 900, scale: 3.0 },
-  scroll: { ms: 900, scale: 3.0 },
-}
-export const APPROACH_MS = Math.max(...Object.values(APPROACH).map((a) => a.ms))
-/** 커서 칸을 채우기 시작하는 시점(ms). 정확한 순간을 윤곽만으로는 읽기 어렵다. */
+const LANE_LEAD_MS = 900
+/**
+ * 커서는 구역이 서로 붙어 있고(120px 간격) 밀도가 높아서(초당 3~4개) 길고 크게 잡으면
+ * 사각형들이 서로 덮는다. 애초에 **연속 입력**이라 매 노트에 반응하는 게 아니라 궤적을
+ * 따라가는 것이므로 짧고 작아도 된다.
+ */
+const CURSOR_LEAD_MS = 600
+const CURSOR_SCALE = 1.8
+/** 커서 구역을 채우기 시작하는 시점(ms). 정확한 순간을 윤곽만으로는 읽기 어렵다. */
 const CURSOR_FILL_MS = 180
 /** 판정 후 잔상이 남는 시간(ms). */
 const AFTERGLOW_MS = 180
+
+export const APPROACH_MS = Math.max(LANE_LEAD_MS, CURSOR_LEAD_MS)
 
 export interface Palette {
   cursor: number
@@ -39,6 +53,7 @@ export interface Palette {
   scroll: number
   line: number
   bone: number
+  field: number
 }
 
 export const readPalette = (): Palette => ({
@@ -47,33 +62,44 @@ export const readPalette = (): Palette => ({
   scroll: tokenColor('--scroll', 0x4ce0c4),
   line: tokenColor('--line', 0x3b2a82),
   bone: tokenColor('--bone', 0xefe9ff),
+  field: tokenColor('--ink-800', 0x1d1443),
 })
-
-const colorOf = (p: Palette, t: NoteState['note']['type']) =>
-  t === 'cursor' ? p.cursor : t === 'click' ? p.click : p.scroll
 
 export class Playfield {
   readonly app: Application
   #palette: Palette
-  #notes = new Graphics()
+  /** 사각형 안에서 벌어지는 것 — 커서 노트와 그 채움. 경계로 잘린다. */
+  #inside = new Container()
+  #cursorNotes = new Graphics()
+  #fills = new Graphics()
+  /** 사각형 밖에서 밀려오는 이산 노트. 자르지 않는다. */
+  #laneNotes = new Graphics()
   #cursor = new Graphics()
   #flash = new Graphics()
-  /** 판정 잔상: 과녁 키 → 남은 시간·등급 */
+  /** 판정 잔상: 자리 → 남은 시간·등급 */
   #glow = new Map<string, { until: number; grade: Grade; color: number }>()
 
   private constructor(app: Application, palette: Palette) {
     this.app = app
     this.#palette = palette
+    // 커서 접근 사각형은 구역보다 커서 경계를 넘는다. 사각형이 플레이 영역의
+    // 경계이므로 마스크로 잘라 안쪽 일로만 보이게 한다.
+    const mask = new Graphics()
+      .roundRect(SQ_LEFT, SQ_TOP, SQUARE, SQUARE, SQ_RADIUS)
+      .fill({ color: 0xffffff })
+    this.#inside.addChild(this.#fills, this.#cursorNotes)
+    this.#inside.mask = mask
+
     const layer = new Container()
-    layer.addChild(this.#board(), this.#flash, this.#notes, this.#cursor)
+    layer.addChild(this.#board(), mask, this.#inside, this.#flash, this.#laneNotes, this.#cursor)
     app.stage.addChild(layer)
   }
 
   static async create(host: HTMLElement, scale: number): Promise<Playfield> {
     const app = new Application()
     await app.init({
-      width: STAGE_WIDTH,
-      height: STAGE_HEIGHT,
+      width: STAGE_W,
+      height: STAGE_H,
       backgroundAlpha: 0,
       antialias: true,
       // 스테이지가 CSS 로 축소될 수 있으니 실제 차지하는 크기로 그린다.
@@ -88,32 +114,27 @@ export class Playfield {
     this.app.destroy(true, { children: true })
   }
 
-  /** 그리드와 네 과녁. 한 번만 그린다. */
+  /**
+   * 큰 정사각형과 네 판정선. 한 번만 그린다.
+   * 변마다 색이 달라서 어느 변이 어느 입력인지 보면 안다 — 모서리 둥근 구간을 뺀
+   * 직선 부분에만 색을 얹는다.
+   */
   #board(): Graphics {
     const g = new Graphics()
     const p = this.#palette
-    for (let row = 0; row < 3; row++)
-      for (let col = 0; col < 3; col++)
-        g.roundRect(
-          GRID_LEFT + col * (CELL + CELL_GAP),
-          GRID_TOP + row * (CELL + CELL_GAP),
-          CELL,
-          CELL,
-          radiusOf(CELL),
-        )
-    g.stroke({ width: 2, color: p.cursor, alpha: 0.24 })
+    g.roundRect(SQ_LEFT, SQ_TOP, SQUARE, SQUARE, SQ_RADIUS)
+    // 옅게 채워 면으로 읽히게 한다. 윤곽만이면 허공에 선이 떠 있는 것처럼 보인다.
+    g.fill({ color: p.field, alpha: 0.7 })
+    g.stroke({ width: 2, color: p.line, alpha: 0.85 })
 
-    for (const key of ['clickL', 'clickR'] as const) {
-      const b = LANE[key]
-      g.roundRect(b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, radiusOf(b.size))
-    }
-    g.stroke({ width: 2, color: p.click, alpha: 0.4 })
+    const a = SQ_RADIUS
+    g.moveTo(SQ_LEFT, SQ_TOP + a).lineTo(SQ_LEFT, SQ_BOTTOM - a)
+    g.moveTo(SQ_RIGHT, SQ_TOP + a).lineTo(SQ_RIGHT, SQ_BOTTOM - a)
+    g.stroke({ width: 4, color: p.click, alpha: 0.9 })
 
-    for (const key of ['scrollUp', 'scrollDown'] as const) {
-      const b = LANE[key]
-      g.roundRect(b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, radiusOf(b.size))
-    }
-    g.stroke({ width: 2, color: p.scroll, alpha: 0.4 })
+    g.moveTo(SQ_LEFT + a, SQ_TOP).lineTo(SQ_RIGHT - a, SQ_TOP)
+    g.moveTo(SQ_LEFT + a, SQ_BOTTOM).lineTo(SQ_RIGHT - a, SQ_BOTTOM)
+    g.stroke({ width: 4, color: p.scroll, alpha: 0.9 })
     return g
   }
 
@@ -122,56 +143,69 @@ export class Playfield {
    * @param notes  전체 노트 상태
    * @param head   아직 판정 안 난 가장 이른 인덱스
    */
-  draw(
-    songMs: number,
-    notes: NoteState[],
-    head: number,
-    cursor: { x: number; y: number },
-  ): void {
+  draw(songMs: number, notes: NoteState[], head: number, cursor: { x: number; y: number }): void {
     const p = this.#palette
-    const g = this.#notes
+    const g = this.#cursorNotes
+    const lanes = this.#laneNotes
+    const f = this.#flash
+    const fill = this.#fills
     g.clear()
+    lanes.clear()
+    f.clear()
+    fill.clear()
 
-    const fills: { b: ReturnType<typeof targetOf>; alpha: number }[] = []
+    // 커서 구역 채움은 윤곽 아래에 깔아야 해서 먼저 모은다.
+    const fills: { cx: number; cy: number; alpha: number }[] = []
+
     for (let i = head; i < notes.length; i++) {
       const s = notes[i]!
       const lead = s.note.t - songMs
       if (lead > APPROACH_MS) break // 정렬돼 있으므로 뒤는 아직 안 보인다
       if (s.judged) continue
-      const a = APPROACH[s.note.type]
-      if (lead > a.ms) continue
-      const b = targetOf(s.note)
-      // 1 → scale. lead 0 에서 과녁과 정확히 포개진다.
-      const k = Math.max(0, lead) / a.ms
-      const size = b.size * (1 + (a.scale - 1) * k)
-      g.roundRect(b.cx - size / 2, b.cy - size / 2, size, size, radiusOf(size))
-      g.stroke({ width: 3, color: colorOf(p, s.note.type), alpha: Math.min(1, (1 - k) * 2.2) })
-      // 커서는 칸 안이 차오르며 "지금"을 알린다. 윤곽 위에 겹치지 않게 따로 모아 먼저 그린다.
-      if (s.note.type === 'cursor' && lead < CURSOR_FILL_MS)
-        fills.push({ b, alpha: 0.3 * (1 - Math.max(0, lead) / CURSOR_FILL_MS) })
-    }
-    const f = this.#flash
-    f.clear()
-    for (const { b, alpha } of fills) {
-      f.roundRect(b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, radiusOf(b.size))
-      f.fill({ color: p.cursor, alpha })
+
+      if (s.note.type === 'cursor') {
+        if (lead > CURSOR_LEAD_MS) continue
+        const b = targetOf(s.note)
+        const u = Math.max(0, lead) / CURSOR_LEAD_MS
+        const size = CELL * (1 + (CURSOR_SCALE - 1) * u)
+        g.roundRect(b.cx - size / 2, b.cy - size / 2, size, size, radiusOf(size))
+        g.stroke({ width: 3, color: p.cursor, alpha: Math.min(1, (1 - u) * 2.2) })
+        if (lead < CURSOR_FILL_MS)
+          fills.push({ cx: b.cx, cy: b.cy, alpha: 0.3 * (1 - Math.max(0, lead) / CURSOR_FILL_MS) })
+        continue
+      }
+
+      // 이산 노트: 바깥에서 밀려와 앞면이 변에 닿는다.
+      const lane = LANES[laneOf(s.note)!]
+      const u = Math.max(0, lead) / LANE_LEAD_MS
+      const b = laneBox(lane, u)
+      lanes.roundRect(b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, radiusOf(b.size))
+      lanes.fill({ color: lane.tone === 'click' ? p.click : p.scroll, alpha: 0.9 })
     }
 
+    for (const { cx, cy, alpha } of fills) {
+      fill.roundRect(cx - CELL / 2, cy - CELL / 2, CELL, CELL, radiusOf(CELL))
+      fill.fill({ color: p.cursor, alpha })
+    }
     this.#drawFlash(songMs)
 
     // 커서. 위치 판정의 주체라 항상 보여야 한다.
     const c = this.#cursor
     c.clear()
-    c.roundRect(cursor.x - 22, cursor.y - 22, 44, 44, radiusOf(44))
+    c.roundRect(cursor.x - 20, cursor.y - 20, 40, 40, radiusOf(40))
     c.fill({ color: p.cursor, alpha: 0.9 })
   }
 
-  /** 판정 직후 과녁을 번쩍인다. 맞았는지 즉시 알아야 한다. */
+  /** 판정 직후 그 자리를 번쩍인다. 맞았는지 즉시 알아야 한다. */
   mark(songMs: number, note: NoteState['note'], grade: Grade): void {
     const b = targetOf(note)
     const color =
-      grade === 'miss' ? this.#palette.click : grade === 'perfect' ? this.#palette.bone : colorOf(this.#palette, note.type)
-    this.#glow.set(`${b.cx},${b.cy}`, { until: songMs + AFTERGLOW_MS, grade, color })
+      grade === 'miss'
+        ? this.#palette.click
+        : grade === 'perfect'
+          ? this.#palette.bone
+          : this.#palette.cursor
+    this.#glow.set(`${b.cx},${b.cy},${b.size}`, { until: songMs + AFTERGLOW_MS, grade, color })
   }
 
   #drawFlash(songMs: number): void {
@@ -182,11 +216,11 @@ export class Playfield {
         this.#glow.delete(key)
         continue
       }
-      const [cx, cy] = key.split(',').map(Number) as [number, number]
+      const [cx, cy, base] = key.split(',').map(Number) as [number, number, number]
       const u = left / AFTERGLOW_MS
-      const size = (v.grade === 'miss' ? 88 : 100) * (1 + (1 - u) * 0.25)
+      const size = base * (1 + (1 - u) * 0.45)
       f.roundRect(cx - size / 2, cy - size / 2, size, size, radiusOf(size))
-      f.fill({ color: v.color, alpha: 0.28 * u })
+      f.fill({ color: v.color, alpha: 0.3 * u })
     }
   }
 }
