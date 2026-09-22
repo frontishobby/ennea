@@ -12,6 +12,7 @@ import { tokenColor } from '../design/theme.ts'
 import type { Grade } from './judge.ts'
 import {
   CURSOR_RADIUS,
+  FIELD_CENTER,
   fieldToStage,
   HIT_RADIUS,
   laneBox,
@@ -40,8 +41,22 @@ const LANE_LEAD_MS = 900
  * 사각형들이 서로 덮는다. 애초에 **연속 입력**이라 매 노트에 반응하는 게 아니라 궤적을
  * 따라가는 것이므로 짧고 작아도 된다.
  */
-const CURSOR_LEAD_MS = 600
-const CURSOR_SCALE = 2.6
+const CURSOR_LEAD_MS = 800
+/**
+ * 원근. 커서 노트는 필드 한가운데를 소실점 삼아 **멀리서 날아온다** — 처음에는 중앙 근처에
+ * 작게 떠 있다가 자기 자리로 퍼지며 커진다.
+ *
+ * 화면에 비친 크기 비율은 s(u) = DEPTH_MIN / (DEPTH_MIN + u(1 − DEPTH_MIN)) 이고,
+ * u 는 남은 시간 비율이다. s(1) = DEPTH_MIN, s(0) = 1 — 판정 순간에 제자리·제크기가 된다.
+ * 이건 z 가 시간에 선형일 때의 진짜 원근 식이라 뒤로 갈수록 빨라지는 가속이 공짜로 붙는다.
+ */
+const DEPTH_MIN = 0.16
+/**
+ * 도착 자리 윤곽의 최소/최대 진하기. 날아온 노트가 여기 내려앉는 순간이 판정 시점이다.
+ * 처음부터 충분히 보여야 한다 — 조준 게임에서 "어디로 갈지"는 미리 알아야 하는 정보고,
+ * 날아오는 노트는 "언제"만 알려준다.
+ */
+const LANDING_ALPHA = { min: 0.2, max: 0.55 }
 /** 판정 지점을 채우기 시작하는 시점(ms). 정확한 순간을 윤곽만으로는 읽기 어렵다. */
 const CURSOR_FILL_MS = 180
 /** 판정 후 잔상이 남는 시간(ms). */
@@ -168,9 +183,23 @@ export class Playfield {
         const c = fieldToStage(s.note.x, s.note.y)
         const u = Math.max(0, lead) / CURSOR_LEAD_MS
         const base = HIT_RADIUS * 2
-        const size = base * (1 + (CURSOR_SCALE - 1) * u)
-        g.roundRect(c.x - size / 2, c.y - size / 2, size, size, radiusOf(size))
-        g.stroke({ width: 3, color: p.cursor, alpha: Math.min(1, (1 - u) * 2.2) })
+
+        // 도착 자리를 먼저 희미하게 깔아둔다. 이게 없으면 "언제 도착하는가"를 읽을 수 없다.
+        g.roundRect(c.x - base / 2, c.y - base / 2, base, base, radiusOf(base))
+        g.stroke({
+          width: 2,
+          color: p.cursor,
+          alpha: LANDING_ALPHA.min + (LANDING_ALPHA.max - LANDING_ALPHA.min) * (1 - u),
+        })
+
+        // 날아오는 노트. 중앙에서 멀리 있다가 제자리로 퍼진다.
+        const persp = DEPTH_MIN / (DEPTH_MIN + u * (1 - DEPTH_MIN))
+        const size = base * persp
+        const x = FIELD_CENTER.x + (c.x - FIELD_CENTER.x) * persp
+        const y = FIELD_CENTER.y + (c.y - FIELD_CENTER.y) * persp
+        g.roundRect(x - size / 2, y - size / 2, size, size, radiusOf(size))
+        g.stroke({ width: 3, color: p.cursor, alpha: Math.min(1, (1 - u) * 3.2) })
+
         if (lead < CURSOR_FILL_MS)
           fills.push({ x: c.x, y: c.y, alpha: 0.3 * (1 - Math.max(0, lead) / CURSOR_FILL_MS) })
         continue

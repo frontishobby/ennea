@@ -32,12 +32,18 @@ export const SQ_RADIUS = radiusOf(SQUARE)
 export const FIELD_SCALE = SQUARE / FIELD_W
 export const FIELD_PX_W = FIELD_W * FIELD_SCALE
 export const FIELD_PX_H = FIELD_H * FIELD_SCALE
-export const FIELD_X = SQ_LEFT
-export const FIELD_Y = SQ_TOP + (SQUARE - FIELD_PX_H) / 2
-
 export interface Point {
   x: number
   y: number
+}
+
+export const FIELD_X = SQ_LEFT
+export const FIELD_Y = SQ_TOP + (SQUARE - FIELD_PX_H) / 2
+
+/** 필드 한가운데(화면 좌표). 커서 노트가 여기서 날아 나온다. */
+export const FIELD_CENTER: Point = {
+  x: FIELD_X + FIELD_PX_W / 2,
+  y: FIELD_Y + FIELD_PX_H / 2,
 }
 
 /** 채보의 필드 좌표 → 화면 논리 좌표 */
