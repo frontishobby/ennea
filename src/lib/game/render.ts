@@ -47,14 +47,21 @@ const CURSOR_FILL_MS = 180
 const AFTERGLOW_MS = 180
 
 /**
- * 커서 관성. 그린 커서를 진행 **반대 방향**으로 살짝 끌어서 가속감을 준다.
- * 멈추면 속도가 0 이라 오프셋도 0 으로 수렴하므로, 과녁에 내려앉는 순간에는 어긋나지 않는다.
- * **판정은 언제나 진짜 좌표로 한다** — 보이는 것만 늦다.
+ * 필드 반동. 커서가 움직이면 **플레이필드 전체가 반대로** 밀린다. 커서가 화면을 더
+ * 크게 훑는 것처럼 보여서 이동이 과장된다.
+ *
+ * **속도 기준이어야 한다.** 커서 위치 기준으로 밀면 판정이 깨진다 — 판정은 진짜 좌표로
+ * 하는데 노트가 같이 밀리므로, 눈으로 맞춰 다가갈수록 목표가 달아나서 커서가 엉뚱한
+ * 곳에 수렴한다. 속도 기준이면 멈추는 순간 0 으로 돌아와 조준이 정확해진다.
+ *
+ * 세로 한계가 가로보다 훨씬 작은 이유: 정사각형이 680 이라 위아래 여백이 20px 뿐이다.
+ * 크게 밀면 변이 화면 밖으로 나간다.
  */
-const LAG_PER_PX_PER_SEC = 0.032
-const LAG_MAX_PX = 26
-/** 오프셋이 목표를 따라가는 시간 상수(초). 작을수록 팽팽하다. */
-const LAG_TAU = 0.05
+const WORLD_PER_PX_PER_SEC = 0.028
+const WORLD_MAX_X = 44
+const WORLD_MAX_Y = 14
+/** 밀림이 목표를 따라가는 시간 상수(초). 작을수록 팽팽하다. */
+const WORLD_TAU = 0.055
 
 export const APPROACH_MS = Math.max(LANE_LEAD_MS, CURSOR_LEAD_MS)
 
@@ -76,6 +83,8 @@ export const readPalette = (): Palette => ({
   field: tokenColor('--ink-800', 0x1d1443),
 })
 
+const clamp = (v: number, max: number) => Math.max(-max, Math.min(max, v))
+
 export class Playfield {
   readonly app: Application
   #palette: Palette
@@ -87,7 +96,9 @@ export class Playfield {
   #laneNotes = new Graphics()
   #cursor = new Graphics()
   #flash = new Graphics()
-  #lag = { x: 0, y: 0 }
+  /** 커서를 뺀 모든 것. 통째로 밀려야 노트와 판정선의 상대 위치가 안 틀어진다. */
+  #world = new Container()
+  #shift = { x: 0, y: 0 }
   #prevCursor: { x: number; y: number } | null = null
   #prevMs = 0
   /** 판정 잔상: 자리 → 남은 시간·등급 */
@@ -104,8 +115,12 @@ export class Playfield {
     this.#inside.addChild(this.#fills, this.#cursorNotes)
     this.#inside.mask = mask
 
+    // 커서만 화면에 고정된다. 나머지는 #world 안에서 같이 밀리므로 클릭 노트와
+    // 판정선의 관계는 그대로다 — 둘 다 같은 만큼 움직인다.
+    this.#world.addChild(this.#board(), mask, this.#inside, this.#flash, this.#laneNotes)
+
     const layer = new Container()
-    layer.addChild(this.#board(), mask, this.#inside, this.#flash, this.#laneNotes, this.#cursor)
+    layer.addChild(this.#world, this.#cursor)
     app.stage.addChild(layer)
   }
 
@@ -203,35 +218,29 @@ export class Playfield {
     }
     this.#drawFlash(songMs)
 
-    // 커서. 위치 판정의 주체라 항상 보여야 한다.
-    const shown = this.#lagged(songMs, cursor)
+    // 커서는 진짜 좌표 그대로. 판정의 주체라 여기가 거짓말하면 안 된다.
     const c = this.#cursor
     c.clear()
-    c.roundRect(shown.x - 20, shown.y - 20, 40, 40, radiusOf(40))
+    c.roundRect(cursor.x - 20, cursor.y - 20, 40, 40, radiusOf(40))
     c.fill({ color: p.cursor, alpha: 0.9 })
+
+    this.#recoil(songMs, cursor)
   }
 
-  /** 진행 반대 방향으로 끌린 커서 위치. 보이는 것만 늦고 판정은 진짜 좌표로 한다. */
-  #lagged(songMs: number, cursor: { x: number; y: number }): { x: number; y: number } {
+  /** 커서 속도의 반대로 필드를 민다. 멈추면 0 으로 수렴해 조준이 정확해진다. */
+  #recoil(songMs: number, cursor: { x: number; y: number }): void {
     const prev = this.#prevCursor
     const dt = Math.min(0.1, Math.max(0.001, (songMs - this.#prevMs) / 1000))
     this.#prevMs = songMs
     this.#prevCursor = { x: cursor.x, y: cursor.y }
-    if (!prev) return cursor
+    if (!prev) return
 
-    const vx = (cursor.x - prev.x) / dt
-    const vy = (cursor.y - prev.y) / dt
-    let tx = -vx * LAG_PER_PX_PER_SEC
-    let ty = -vy * LAG_PER_PX_PER_SEC
-    const len = Math.hypot(tx, ty)
-    if (len > LAG_MAX_PX) {
-      tx = (tx / len) * LAG_MAX_PX
-      ty = (ty / len) * LAG_MAX_PX
-    }
-    const k = 1 - Math.exp(-dt / LAG_TAU)
-    this.#lag.x += (tx - this.#lag.x) * k
-    this.#lag.y += (ty - this.#lag.y) * k
-    return { x: cursor.x + this.#lag.x, y: cursor.y + this.#lag.y }
+    const tx = clamp(-((cursor.x - prev.x) / dt) * WORLD_PER_PX_PER_SEC, WORLD_MAX_X)
+    const ty = clamp(-((cursor.y - prev.y) / dt) * WORLD_PER_PX_PER_SEC, WORLD_MAX_Y)
+    const k = 1 - Math.exp(-dt / WORLD_TAU)
+    this.#shift.x += (tx - this.#shift.x) * k
+    this.#shift.y += (ty - this.#shift.y) * k
+    this.#world.position.set(this.#shift.x, this.#shift.y)
   }
 
   /** 판정 직후 그 자리를 번쩍인다. 맞았는지 즉시 알아야 한다. */
