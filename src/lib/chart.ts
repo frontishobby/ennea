@@ -6,10 +6,20 @@
  * 1v1 매칭·리플레이·기록이 전부 이 해시에 매달린다.
  */
 
-export const CHART_VERSION = 1 as const
+export const CHART_VERSION = 2 as const
 
 /** 생성기 이름+버전. 알고리즘이 바뀌면 올린다 — 시드와 해시가 같이 바뀐다. */
-export const GENERATOR = 'onset-v2'
+export const GENERATOR = 'onset-v3'
+
+/**
+ * 커서 좌표계. 채보는 **정규화 필드 단위**로 좌표를 적고, 게임이 화면에 맞춘다.
+ * 그래야 플레이 영역 크기를 바꿔도 채보가 안 깨진다.
+ *
+ * 가로세로 비가 4:3 인 이유는 osu!standard 플레이필드(512×384)가 4:3 이고, 거기서
+ * 채보를 들여올 것이기 때문이다. 비를 바꾸면 수입해온 에임 패턴이 가로로 눌린다.
+ */
+export const FIELD_W = 1000
+export const FIELD_H = 750
 
 /** Expert 는 일단 없다. hard 가 천장이다. */
 export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const
@@ -17,7 +27,11 @@ export type Difficulty = (typeof DIFFICULTIES)[number]
 
 export type NoteType = 'cursor' | 'click' | 'scroll'
 
-/** 3x3 그리드. x, y ∈ {0, 1, 2}. 판정 시점에 커서가 그 칸 안에 있으면 성공. */
+/**
+ * 커서 노트. x ∈ [0, FIELD_W], y ∈ [0, FIELD_H] 의 **정수**다.
+ * 노트 시각 근처에 커서가 그 점 반경 안에 있으면 성공 — 타이밍이 아니라 위치 판정이다.
+ * 정수여야 하는 이유는 t 와 같다: 부동소수점이 들어가면 직렬화에 따라 해시가 흔들린다.
+ */
 export interface CursorNote {
   t: number
   type: 'cursor'
@@ -70,6 +84,8 @@ export function canonicalize(chart: Chart): string {
     if (!Number.isInteger(n.t)) throw new Error(`note.t must be an integer ms, got ${n.t}`)
     switch (n.type) {
       case 'cursor':
+        if (!Number.isInteger(n.x) || !Number.isInteger(n.y))
+          throw new Error(`cursor note position must be integers, got (${n.x}, ${n.y})`)
         return { t: n.t, type: n.type, x: n.x, y: n.y }
       case 'click':
         return { t: n.t, type: n.type, btn: n.btn }

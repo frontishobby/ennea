@@ -14,19 +14,19 @@
       "charts": [
         {
           "difficulty": "easy",
-          "chartHash": "e763cf51e8fd5061",
+          "chartHash": "4c502d6224c98f0b",
           "noteCount": 313,
-          "level": 5
+          "level": 4
         },
         {
           "difficulty": "normal",
-          "chartHash": "e6e1f7a00f37fb43",
+          "chartHash": "30d5616d0005d2a2",
           "noteCount": 599,
           "level": 8
         },
         {
           "difficulty": "hard",
-          "chartHash": "6b52b85ea6041402",
+          "chartHash": "138771f359beaa88",
           "noteCount": 1153,
           "level": 10
         }

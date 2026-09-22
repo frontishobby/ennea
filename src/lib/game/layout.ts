@@ -1,21 +1,22 @@
 /**
  * 플레이필드 좌표 (PLAN §3). 1280×720 논리 좌표계.
  *
- * 화면 가운데에 큰 정사각형 하나. **네 변이 곧 판정선이다.**
- *   왼쪽 변 = 좌클릭, 오른쪽 변 = 우클릭, 윗변 = 스크롤↑, 아랫변 = 스크롤↓
- * 이산 노트는 바깥에서 안쪽으로 밀려와 앞면이 변에 닿는 순간이 판정 시점이다.
- * 위치 무관 입력을 사각형 밖에서 처리하므로 "저기로 가야 하나" 혼동이 없다 (PLAN §3).
+ * 화면 가운데에 큰 정사각형 하나. **좌우 변이 클릭 판정선이다.**
+ * 클릭 노트는 바깥에서 안쪽으로 밀려와 앞면이 변에 닿는 순간이 판정 시점이다.
  *
- * 안쪽 3×3 은 **그리지 않는다.** 커서 노트가 뜰 때 그 자리만 보여주면 되고,
- * 격자를 상시로 그리면 노트를 가린다.
+ * 스크롤은 쓰지 않는다. 커서 노트 판정 ±50ms 안에 스크롤을 두면 휠을 굴릴 때 마우스가
+ * 흔들려 커서를 놓치는데(PLAN §7⑥), osu 에서 들여온 채보는 커서가 빽빽해서 안전한 틈이
+ * 없다. 포맷에는 타입이 남아 있으니 나중에 스피너·브레이크 구간용으로 되살릴 수 있다.
+ *
+ * 안쪽 3×3 격자는 그리지 않는다. 커서 노트는 3×3 이 아니라 **연속 좌표**다.
  */
 import { CURVE } from '../design/curve.ts'
-import type { Note } from '../chart.ts'
+import { FIELD_H, FIELD_W, type Note } from '../chart.ts'
 
 export const STAGE_W = 1280
 export const STAGE_H = 720
 
-export const SQUARE = 360
+export const SQUARE = 680
 export const SQ_LEFT = (STAGE_W - SQUARE) / 2
 export const SQ_TOP = (STAGE_H - SQUARE) / 2
 export const SQ_RIGHT = SQ_LEFT + SQUARE
@@ -24,70 +25,82 @@ export const SQ_BOTTOM = SQ_TOP + SQUARE
 export const radiusOf = (size: number) => size * CURVE
 export const SQ_RADIUS = radiusOf(SQUARE)
 
-/** 커서 노트가 앉는 3×3 구역. 사각형을 셋으로 나눈 것뿐이고 선은 그리지 않는다. */
-export const CELL = SQUARE / 3
+/**
+ * 필드(4:3)를 정사각형 안에 **균등 배율**로 넣는다. 비균등으로 늘리면 가로 점프가
+ * 짧아져서 수입해온 에임 패턴이 망가진다. 가로를 꽉 채우고 위아래가 조금 빈다.
+ */
+export const FIELD_SCALE = SQUARE / FIELD_W
+export const FIELD_PX_W = FIELD_W * FIELD_SCALE
+export const FIELD_PX_H = FIELD_H * FIELD_SCALE
+export const FIELD_X = SQ_LEFT
+export const FIELD_Y = SQ_TOP + (SQUARE - FIELD_PX_H) / 2
 
-export interface Box {
-  cx: number
-  cy: number
-  size: number
+export interface Point {
+  x: number
+  y: number
 }
 
-export const cellBox = (x: number, y: number): Box => ({
-  cx: SQ_LEFT + (x + 0.5) * CELL,
-  cy: SQ_TOP + (y + 0.5) * CELL,
-  size: CELL,
+/** 채보의 필드 좌표 → 화면 논리 좌표 */
+export const fieldToStage = (x: number, y: number): Point => ({
+  x: FIELD_X + x * FIELD_SCALE,
+  y: FIELD_Y + y * FIELD_SCALE,
 })
 
-export type LaneKey = 'clickL' | 'clickR' | 'scrollUp' | 'scrollDown'
+/**
+ * 커서 판정 반경(화면 px). osu! CS4 서클이 필드 단위로 약 71 이라 그보다 넉넉하다 —
+ * osu 는 **내가 클릭하는 순간**을 고르지만 여기는 시각이 정해져 있어 더 가혹하기 때문이다.
+ */
+export const HIT_RADIUS = 62
+
+export type LaneKey = 'clickL' | 'clickR'
 
 export interface Lane {
   size: number
-  /** 노트가 움직이는 축 */
-  axis: 'x' | 'y'
-  /** 판정 시각의 중심 좌표(진행 축). 이때 노트 앞면이 변에 닿는다. */
+  /** 판정 시각의 중심 x. 이때 노트 앞면이 변에 닿는다. */
   hit: number
-  /** 나타나는 중심 좌표(진행 축). 화면 밖. */
+  /** 나타나는 중심 x. 화면 밖. */
   spawn: number
-  /** 진행 축과 직교하는 고정 좌표 */
   cross: number
-  tone: 'click' | 'scroll'
 }
 
 const CLICK_NOTE = 44
-const SCROLL_NOTE = 40
 
 export const LANES: Record<LaneKey, Lane> = {
-  clickL: { size: CLICK_NOTE, axis: 'x', hit: SQ_LEFT - CLICK_NOTE / 2, spawn: -CLICK_NOTE / 2, cross: STAGE_H / 2, tone: 'click' },
-  clickR: { size: CLICK_NOTE, axis: 'x', hit: SQ_RIGHT + CLICK_NOTE / 2, spawn: STAGE_W + CLICK_NOTE / 2, cross: STAGE_H / 2, tone: 'click' },
-  scrollUp: { size: SCROLL_NOTE, axis: 'y', hit: SQ_TOP - SCROLL_NOTE / 2, spawn: -SCROLL_NOTE / 2, cross: STAGE_W / 2, tone: 'scroll' },
-  scrollDown: { size: SCROLL_NOTE, axis: 'y', hit: SQ_BOTTOM + SCROLL_NOTE / 2, spawn: STAGE_H + SCROLL_NOTE / 2, cross: STAGE_W / 2, tone: 'scroll' },
+  clickL: { size: CLICK_NOTE, hit: SQ_LEFT - CLICK_NOTE / 2, spawn: -CLICK_NOTE / 2, cross: STAGE_H / 2 },
+  clickR: { size: CLICK_NOTE, hit: SQ_RIGHT + CLICK_NOTE / 2, spawn: STAGE_W + CLICK_NOTE / 2, cross: STAGE_H / 2 },
 }
 
 export const laneOf = (note: Note): LaneKey | null =>
-  note.type === 'click' ? (note.btn === 'L' ? 'clickL' : 'clickR')
-  : note.type === 'scroll' ? (note.dir === 'up' ? 'scrollUp' : 'scrollDown')
-  : null
+  note.type === 'click' ? (note.btn === 'L' ? 'clickL' : 'clickR') : null
 
-/** 판정 시각의 노트 자리. 잔상·번쩍임이 여기 뜬다. */
+export interface Box extends Point {
+  size: number
+}
+
+/** 판정 시각의 노트 자리(화면 좌표). 잔상·번쩍임이 여기 뜬다. */
 export function targetOf(note: Note): Box {
-  if (note.type === 'cursor') return cellBox(note.x, note.y)
-  const lane = LANES[laneOf(note)!]
-  return lane.axis === 'x'
-    ? { cx: lane.hit, cy: lane.cross, size: lane.size }
-    : { cx: lane.cross, cy: lane.hit, size: lane.size }
+  if (note.type === 'cursor') {
+    const p = fieldToStage(note.x, note.y)
+    return { x: p.x, y: p.y, size: HIT_RADIUS * 2 }
+  }
+  const lane = LANES[laneOf(note) ?? 'clickL']
+  return { x: lane.hit, y: lane.cross, size: lane.size }
 }
 
-/** 남은 시간에 따른 노트 중심. u = 1 이면 spawn, 0 이면 판정선. */
+/** 남은 시간에 따른 클릭 노트 중심. u = 1 이면 spawn, 0 이면 판정선. */
 export function laneBox(lane: Lane, u: number): Box {
-  const pos = lane.hit + (lane.spawn - lane.hit) * u
-  return lane.axis === 'x'
-    ? { cx: pos, cy: lane.cross, size: lane.size }
-    : { cx: lane.cross, cy: pos, size: lane.size }
+  return { x: lane.hit + (lane.spawn - lane.hit) * u, y: lane.cross, size: lane.size }
 }
 
-/** 커서가 그 구역 안에 있는가. 커서 노트는 타이밍이 아니라 위치로 판정한다. */
-export function insideCell(x: number, y: number, cellX: number, cellY: number): boolean {
-  const b = cellBox(cellX, cellY)
-  return Math.abs(x - b.cx) <= b.size / 2 && Math.abs(y - b.cy) <= b.size / 2
+/** 커서가 그 점에 닿았는가. 화면 좌표끼리 잰다. */
+export function withinHit(cursor: Point, note: CursorLike): boolean {
+  const p = fieldToStage(note.x, note.y)
+  const dx = cursor.x - p.x
+  const dy = cursor.y - p.y
+  return dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS
+}
+
+interface CursorLike {
+  x: number
+  y: number
 }

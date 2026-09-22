@@ -19,6 +19,14 @@ export const WINDOW: Record<Exclude<Grade, 'miss'>, number> = {
 /** 이 밖이면 입력이 그 노트에 닿지 않는다. */
 export const MISS_AFTER = WINDOW.good
 
+/**
+ * 커서 판정 창(ms). 이 안 **어느 순간이라도** 반경에 들어와 있었으면 성공이다.
+ *
+ * "노트 시각 그 순간"만 보면 너무 가혹하다 — osu 는 내가 클릭하는 순간을 고르지만
+ * 여기는 시각이 정해져 있어서, 지나가는 중이면 몇 ms 차이로 놓친다.
+ */
+export const CURSOR_WINDOW = 40
+
 export const SCORE: Record<Grade, number> = { perfect: 300, great: 200, good: 100, miss: 0 }
 /** 정확도 계산용 가중치. */
 export const ACCURACY: Record<Grade, number> = { perfect: 1, great: 0.7, good: 0.35, miss: 0 }

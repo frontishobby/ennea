@@ -6,13 +6,14 @@
  */
 import {
   CHART_VERSION,
+  FIELD_H,
+  FIELD_W,
   GENERATOR,
   type Chart,
   type ClickNote,
   type CursorNote,
   type Difficulty,
   type Note,
-  type ScrollNote,
 } from '../../src/lib/chart.ts'
 import { seeded } from '../../src/lib/util/prng.ts'
 import type { Analysis } from './analyze.ts'
@@ -28,48 +29,48 @@ export interface DifficultyParams {
    * 같은 타입 노트 사이 최소 간격, 비트 단위. 118 BPM 과 174 BPM 에서 같은 "음악적"
    * 밀도가 되게 한다. 절대 난이도 차이는 songs.json 의 level 이 진다.
    */
-  minGapBeats: { cursor: number; click: number; scroll: number }
+  minGapBeats: { cursor: number; click: number }
   /**
    * 타입 무관, 한 비트 안에 최대 몇 개 (센 것부터). 역학이 없는 균일한 곡에서는
    * minRatio 가 아무것도 못 솎는다 — 이게 밀도를 잡는 마지막 고삐다.
    */
   maxPerBeat: number
-  /** 커서 이동 예산, 체비셰프 칸/초 (PLAN §7①). 실측 대상 (§15). */
+  /** 커서 이동 예산, **필드 단위/초** (PLAN §7①). 필드는 1000×750. 실측 대상 (§15). */
   vMax: number
   /** 커서 노트 이 거리(초) 안의 클릭은 버린다. 겹침은 최상위 난이도에서만 (PLAN §7⑥). 0 이면 허용. */
   clickCursorExclusion: number
 }
 
-/** 스크롤 노트 최소 간격 바닥. 트랙패드 관성 때문에 어떤 난이도에서도 이 밑으로 안 간다 (PLAN §4). */
-export const SCROLL_FLOOR_SEC = 0.2
-/** 커서 노트 판정 ±50ms 안에 스크롤 금지 — 휠을 굴리면 마우스가 흔들린다 (PLAN §7⑥). */
-export const SCROLL_CURSOR_EXCLUSION_SEC = 0.05
-/** 스크롤 직후 커서를 멀리 보내지 않는다. 이 시간 동안 이동 예산을 절반으로. */
-export const AFTER_SCROLL_SEC = 0.3
+/**
+ * 스크롤 노트는 만들지 않는다. 커서 판정 ±50ms 안에 두면 휠을 굴릴 때 마우스가 흔들려
+ * 커서를 놓치는데(PLAN §7⑥), 커서가 촘촘한 채보에는 안전한 틈이 없다.
+ * 저역은 좌클릭, 고역은 우클릭으로 간다 — 킥은 왼손, 하이햇은 오른손이 자연스럽다.
+ */
+export const USE_SCROLL = false
 
 export const PARAMS: Record<Difficulty, DifficultyParams> = {
   easy: {
     gridDiv: 2,
     minRatio: 1.6,
-    minGapBeats: { cursor: 1, click: 1, scroll: 2 },
+    minGapBeats: { cursor: 1, click: 1 },
     maxPerBeat: 1,
-    vMax: 2.5,
+    vMax: 850,
     clickCursorExclusion: 0.1,
   },
   normal: {
     gridDiv: 4,
     minRatio: 1.25,
-    minGapBeats: { cursor: 0.5, click: 0.5, scroll: 1 },
+    minGapBeats: { cursor: 0.5, click: 0.5 },
     maxPerBeat: 2,
-    vMax: 4.5,
+    vMax: 1500,
     clickCursorExclusion: 0.06,
   },
   hard: {
     gridDiv: 4,
     minRatio: 1.0,
-    minGapBeats: { cursor: 0.25, click: 0.25, scroll: 0.5 },
+    minGapBeats: { cursor: 0.25, click: 0.25 },
     maxPerBeat: 4,
-    vMax: 7.5,
+    vMax: 2500,
     clickCursorExclusion: 0,
   },
 }
@@ -77,8 +78,7 @@ export const PARAMS: Record<Difficulty, DifficultyParams> = {
 /** 한 섹션 = 8마디. 2분 곡이면 8~10 구간 — 테니스 스코어가 성립하는 개수 (PLAN §10). */
 const SECTION_BARS = 8
 
-const cheb = (ax: number, ay: number, bx: number, by: number) =>
-  Math.max(Math.abs(ax - bx), Math.abs(ay - by))
+const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by)
 
 /**
  * 박자가 흐린 구간에서는 세기 문턱을 올린다. 그리드가 설명 못 하는 온셋에 노트를 찍으면
@@ -132,25 +132,24 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   const nearCursor = (t: number, within: number) =>
     within > 0 && cursorTimes.some((c) => Math.abs(c - t) < within)
 
-  // 클릭: 스네어·클랩은 광대역이라 고역에도 잡힌다. 커서와 동시에 치는 건 hard 만.
-  const clickSrc0 = thin(
+  // 클릭: 저역(킥)은 좌클릭, 고역(하이햇·심벌)은 우클릭. 왼손/오른손이 자연스럽다.
+  // 커서와 겹치는 건 hard 만 — 클릭은 마우스를 덜 흔들어서 허용된다 (PLAN §7⑥).
+  const clickLSrc0 = thin(
+    snapAll(src('low')).filter((o) => !nearCursor(o.t, p.clickCursorExclusion)),
+    gap(p.minGapBeats.click),
+    need,
+  )
+  const clickRSrc0 = thin(
     snapAll(src('high')).filter((o) => !nearCursor(o.t, p.clickCursorExclusion)),
     gap(p.minGapBeats.click),
     need,
   )
 
-  // 스크롤: 커서 노트 ±50ms 안은 어떤 난이도에서도 안 된다. 바닥 200ms 도 절대.
-  const scrollSrc0 = thin(
-    snapAll(src('low')).filter((o) => !nearCursor(o.t, SCROLL_CURSOR_EXCLUSION_SEC)),
-    Math.max(gap(p.minGapBeats.scroll), SCROLL_FLOOR_SEC),
-    need,
-  )
-
-  // 비트당 캡: 세 타입을 합쳐 비트 단위로 묶고 센 것부터 maxPerBeat 개만 남긴다.
+  // 비트당 캡: 타입을 합쳐 비트 단위로 묶고 센 것부터 maxPerBeat 개만 남긴다.
   const tagged = [
     ...cursorSrc0.map((o) => ({ o, kind: 'cursor' as const })),
-    ...clickSrc0.map((o) => ({ o, kind: 'click' as const })),
-    ...scrollSrc0.map((o) => ({ o, kind: 'scroll' as const })),
+    ...clickLSrc0.map((o) => ({ o, kind: 'clickL' as const })),
+    ...clickRSrc0.map((o) => ({ o, kind: 'clickR' as const })),
   ]
   const byBeat = new Map<number, typeof tagged>()
   for (const x of tagged) {
@@ -159,7 +158,7 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
     if (list) list.push(x)
     else byBeat.set(b, [x])
   }
-  const kept = { cursor: [] as Onset[], click: [] as Onset[], scroll: [] as Onset[] }
+  const kept = { cursor: [] as Onset[], clickL: [] as Onset[], clickR: [] as Onset[] }
   for (const list of byBeat.values()) {
     list.sort((x, y) => y.o.ratio - x.o.ratio || x.o.t - y.o.t)
     // 박자 흐린 구간은 비트당 하나까지만. 센 소리가 있어도 격자가 설명 못 하면 성기게 둔다.
@@ -168,74 +167,56 @@ export function generate(a: Analysis, difficulty: Difficulty, songHash: string):
   }
   const byT = (x: Onset, y: Onset) => x.t - y.t
   const cursorSrc = kept.cursor.sort(byT)
-  const clickSrc = kept.click.sort(byT)
-  const scrollSrc = kept.scroll.sort(byT)
+  const clickSrc = [
+    ...kept.clickL.map((o) => ({ o, btn: 'L' as const })),
+    ...kept.clickR.map((o) => ({ o, btn: 'R' as const })),
+  ].sort((x, y) => x.o.t - y.o.t)
 
   const ms = (t: number) => Math.round(t * 1000)
 
-  // 클릭: 연타면 좌우 번갈아, 떨어져 있으면 무작위
-  const clicks: ClickNote[] = []
-  let lastBtn: 'L' | 'R' = rng() < 0.5 ? 'L' : 'R'
-  let lastClickT = -Infinity
-  for (const o of clickSrc) {
-    const btn: 'L' | 'R' =
-      o.t - lastClickT < 0.3 ? (lastBtn === 'L' ? 'R' : 'L') : rng() < 0.5 ? 'L' : 'R'
-    clicks.push({ t: ms(o.t), type: 'click', btn })
-    lastBtn = btn
-    lastClickT = o.t
-  }
+  const clicks: ClickNote[] = clickSrc.map(({ o, btn }) => ({ t: ms(o.t), type: 'click', btn }))
 
-  // 스크롤: 같은 방향으로 이어지는 게 자연스럽다. 65% 유지.
-  const scrolls: ScrollNote[] = []
-  let dir: 'up' | 'down' = rng() < 0.5 ? 'up' : 'down'
-  for (const o of scrollSrc) {
-    if (scrolls.length && rng() >= 0.65) dir = dir === 'up' ? 'down' : 'up'
-    scrolls.push({ t: ms(o.t), type: 'scroll', dir })
-  }
-
-  // 커서: 이동 예산 안에서 무작위 (M3). 스크롤 직후엔 예산 절반.
-  const scrollTimes = scrollSrc.map((o) => o.t)
-  let scrollPtr = 0
-  const recentScroll = (t: number) => {
-    while (scrollPtr < scrollTimes.length && scrollTimes[scrollPtr] < t - AFTER_SCROLL_SEC) scrollPtr++
-    const s = scrollTimes[scrollPtr]
-    return s !== undefined && s <= t && t - s < AFTER_SCROLL_SEC
-  }
+  /**
+   * 커서: 이동 예산 안에서 무작위 (M3). 3×3 칸이 아니라 필드 전체의 연속 좌표다.
+   * 가장자리를 피해 안쪽에 두고, 직전 위치에서 예산 반경 안의 점을 고른다.
+   * 사람이 만든 패턴(흐름·점프·반복)은 여기서 안 나온다 — osu 맵을 들여오는 게 그 답이다.
+   */
+  const MARGIN = 70
   const cursors: CursorNote[] = []
-  let cx = 1
-  let cy = 1
+  let cx = FIELD_W / 2
+  let cy = FIELD_H / 2
   let prevMs: number | undefined
   for (const o of cursorSrc) {
     // 예산은 채보에 기록되는 정수 ms 로 계산한다. validate() 와 같은 숫자를 봐야
-    // 반올림 1ms 차이로 경계에서 7.5 > 7.5 가 나지 않는다.
+    // 반올림 1ms 차이로 경계에서 걸리지 않는다.
     const tMs = ms(o.t)
     const dt = prevMs === undefined ? Infinity : (tMs - prevMs) / 1000
-    let budget = p.vMax * dt
-    if (recentScroll(o.t)) budget *= 0.5
-    const maxD = Math.min(2, Math.floor(budget + 1e-9))
-    if (maxD > 0) {
-      const cands: { x: number; y: number; w: number }[] = [{ x: cx, y: cy, w: 0.25 }]
-      for (let y = 0; y < 3; y++)
-        for (let x = 0; x < 3; x++) {
-          const d = cheb(cx, cy, x, y)
-          if (d >= 1 && d <= maxD) cands.push({ x, y, w: 1 })
-        }
-      let r = rng() * cands.reduce((s, c) => s + c.w, 0)
-      for (const c of cands) {
-        r -= c.w
-        if (r <= 0) {
-          cx = c.x
-          cy = c.y
+    const reach = Math.min(p.vMax * dt, Math.hypot(FIELD_W, FIELD_H))
+    if (Number.isFinite(reach) && reach > 1) {
+      // 예산 반경 안에서 고른다. 너무 짧은 이동은 심심하니 하한을 둔다.
+      const lo = Math.min(reach * 0.35, 120)
+      let nx = cx
+      let ny = cy
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const ang = rng() * Math.PI * 2
+        const r = lo + rng() * (reach - lo)
+        const tx = cx + Math.cos(ang) * r
+        const ty = cy + Math.sin(ang) * r
+        if (tx >= MARGIN && tx <= FIELD_W - MARGIN && ty >= MARGIN && ty <= FIELD_H - MARGIN) {
+          nx = tx
+          ny = ty
           break
         }
       }
+      cx = nx
+      cy = ny
     }
-    cursors.push({ t: tMs, type: 'cursor', x: cx, y: cy })
+    cursors.push({ t: tMs, type: 'cursor', x: Math.round(cx), y: Math.round(cy) })
     prevMs = tMs
   }
 
   const order: Record<Note['type'], number> = { cursor: 0, click: 1, scroll: 2 }
-  const notes: Note[] = [...cursors, ...clicks, ...scrolls].sort(
+  const notes: Note[] = [...cursors, ...clicks].sort(
     (x, y) => x.t - y.t || order[x.type] - order[y.type],
   )
 
@@ -263,7 +244,7 @@ export interface ChartStats {
   total: number
   /** 첫 노트~마지막 노트 구간의 초당 노트 수 */
   nps: number
-  /** 커서 이동 평균 속도 (칸/초) */
+  /** 커서 이동 평균 속도 (필드 단위/초) */
   cursorSpeed: number
   /** 1~10. 절대 난이도 추정치 — songs.json 의 level. 손으로 고쳐도 된다. */
   level: number
@@ -286,14 +267,15 @@ export function describe(chart: Chart): ChartStats {
     if (prev) {
       const dt = (n.t - prev.t) / 1000
       if (dt > 0 && dt < 2) {
-        speedSum += cheb(prev.x, prev.y, n.x, n.y) / dt
+        speedSum += dist(prev.x, prev.y, n.x, n.y) / dt
         moves++
       }
     }
     prev = n
   }
   const cursorSpeed = moves ? speedSum / moves : 0
-  const level = Math.max(1, Math.min(10, Math.round(0.5 + nps * 1.3 + cursorSpeed * 0.8)))
+  // cursorSpeed 는 이제 필드 단위/초라 스케일이 다르다. 1000 단위/초를 한 칸어치로 본다.
+  const level = Math.max(1, Math.min(10, Math.round(0.5 + nps * 1.3 + (cursorSpeed / 1000) * 0.8)))
   return { counts, total, nps, cursorSpeed, level }
 }
 
@@ -306,25 +288,22 @@ export function validate(chart: Chart): string[] {
     if (!Number.isInteger(n.t)) bad.push(`t 가 정수가 아니다: ${n.t}`)
     if (n.t < prevT) bad.push(`정렬이 깨졌다: ${prevT} -> ${n.t}`)
     prevT = n.t
-    if (n.type === 'cursor' && (n.x < 0 || n.x > 2 || n.y < 0 || n.y > 2))
-      bad.push(`커서 칸 범위 밖: (${n.x}, ${n.y})`)
+    if (n.type === 'cursor') {
+      if (!Number.isInteger(n.x) || !Number.isInteger(n.y))
+        bad.push(`커서 좌표가 정수가 아니다: (${n.x}, ${n.y})`)
+      if (n.x < 0 || n.x > FIELD_W || n.y < 0 || n.y > FIELD_H)
+        bad.push(`커서 좌표 범위 밖: (${n.x}, ${n.y})`)
+    }
+    if (n.type === 'scroll' && !USE_SCROLL) bad.push(`스크롤 노트는 만들지 않는다: @${n.t}`)
   }
   const cursors = chart.notes.filter((n): n is CursorNote => n.type === 'cursor')
-  const scrolls = chart.notes.filter((n) => n.type === 'scroll')
-  for (let i = 1; i < scrolls.length; i++) {
-    const gap = scrolls[i].t - scrolls[i - 1].t
-    if (gap < SCROLL_FLOOR_SEC * 1000 - 1) bad.push(`스크롤 간격 ${gap}ms < 200ms @${scrolls[i].t}`)
-  }
-  for (const s of scrolls) {
-    if (cursors.some((c) => Math.abs(c.t - s.t) < SCROLL_CURSOR_EXCLUSION_SEC * 1000))
-      bad.push(`스크롤이 커서 ±50ms 안: @${s.t}`)
-  }
   for (let i = 1; i < cursors.length; i++) {
     const a = cursors[i - 1]
     const b = cursors[i]
     const dt = (b.t - a.t) / 1000
-    const d = cheb(a.x, a.y, b.x, b.y)
-    if (d > 0 && d / dt > p.vMax + 1e-6) bad.push(`커서 속도 초과 ${(d / dt).toFixed(1)} > ${p.vMax} @${b.t}`)
+    const d = dist(a.x, a.y, b.x, b.y)
+    if (d > 0 && d / dt > p.vMax + 1e-6)
+      bad.push(`커서 속도 초과 ${(d / dt).toFixed(0)} > ${p.vMax} @${b.t}`)
   }
   if (chart.sections[0] !== 0) bad.push('sections 는 0 으로 시작해야 한다')
   for (let i = 1; i < chart.beats.length; i++) {

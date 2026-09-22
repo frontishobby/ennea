@@ -7,9 +7,10 @@
  */
 import type { Chart, Note } from '../chart.ts'
 import type { DiscreteInput, DiscreteKind } from './input.ts'
-import { insideCell } from './layout.ts'
+import { withinHit } from './layout.ts'
 import {
   applyJudgement,
+  CURSOR_WINDOW,
   emptyTally,
   gradeTiming,
   MISS_AFTER,
@@ -18,8 +19,10 @@ import {
   type Tally,
 } from './judge.ts'
 
-/** 커서 노트를 노트 시각 직후에 판정한다. 표본이 도착할 여유. */
+/** 판정 창이 닫힌 뒤 이만큼 더 기다렸다가 판정한다. 표본이 도착할 여유. */
 const CURSOR_SETTLE_MS = 30
+/** 창 안을 훑는 간격(ms). pointermove 가 60~125Hz 라 이보다 촘촘히 볼 이유가 없다. */
+const CURSOR_PROBE_MS = 8
 
 export interface NoteState {
   note: Note
@@ -79,11 +82,14 @@ export class Session {
       if (s.judged) continue
       const { note } = s
       if (note.type === 'cursor') {
-        if (songMs < note.t + CURSOR_SETTLE_MS) break
-        // 위치 판정: 노트 시각의 커서가 그 칸 안에 있었는가. 타이밍은 보지 않는다.
-        const at = cursorAt(note.t)
-        const inside = at ? insideCell(at.x, at.y, note.x, note.y) : false
-        this.#settle(s, inside ? 'perfect' : 'miss', 0)
+        if (songMs < note.t + CURSOR_WINDOW + CURSOR_SETTLE_MS) break
+        // 위치 판정: 창 안 어느 순간이라도 반경에 들어왔는가. 타이밍 등급은 없다.
+        let hit = false
+        for (let d = -CURSOR_WINDOW; d <= CURSOR_WINDOW && !hit; d += CURSOR_PROBE_MS) {
+          const at = cursorAt(note.t + d)
+          if (at && withinHit(at, note)) hit = true
+        }
+        this.#settle(s, hit ? 'perfect' : 'miss', 0)
       } else {
         if (songMs <= note.t + MISS_AFTER) break
         this.#settle(s, 'miss', 0)

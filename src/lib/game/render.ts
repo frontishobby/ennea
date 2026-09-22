@@ -11,7 +11,8 @@ import { Application, Container, Graphics } from 'pixi.js'
 import { tokenColor } from '../design/theme.ts'
 import type { Grade } from './judge.ts'
 import {
-  CELL,
+  fieldToStage,
+  HIT_RADIUS,
   laneBox,
   laneOf,
   LANES,
@@ -39,11 +40,21 @@ const LANE_LEAD_MS = 900
  * 따라가는 것이므로 짧고 작아도 된다.
  */
 const CURSOR_LEAD_MS = 600
-const CURSOR_SCALE = 1.8
-/** 커서 구역을 채우기 시작하는 시점(ms). 정확한 순간을 윤곽만으로는 읽기 어렵다. */
+const CURSOR_SCALE = 2.6
+/** 판정 지점을 채우기 시작하는 시점(ms). 정확한 순간을 윤곽만으로는 읽기 어렵다. */
 const CURSOR_FILL_MS = 180
 /** 판정 후 잔상이 남는 시간(ms). */
 const AFTERGLOW_MS = 180
+
+/**
+ * 커서 관성. 그린 커서를 진행 **반대 방향**으로 살짝 끌어서 가속감을 준다.
+ * 멈추면 속도가 0 이라 오프셋도 0 으로 수렴하므로, 과녁에 내려앉는 순간에는 어긋나지 않는다.
+ * **판정은 언제나 진짜 좌표로 한다** — 보이는 것만 늦다.
+ */
+const LAG_PER_PX_PER_SEC = 0.032
+const LAG_MAX_PX = 26
+/** 오프셋이 목표를 따라가는 시간 상수(초). 작을수록 팽팽하다. */
+const LAG_TAU = 0.05
 
 export const APPROACH_MS = Math.max(LANE_LEAD_MS, CURSOR_LEAD_MS)
 
@@ -76,6 +87,9 @@ export class Playfield {
   #laneNotes = new Graphics()
   #cursor = new Graphics()
   #flash = new Graphics()
+  #lag = { x: 0, y: 0 }
+  #prevCursor: { x: number; y: number } | null = null
+  #prevMs = 0
   /** 판정 잔상: 자리 → 남은 시간·등급 */
   #glow = new Map<string, { until: number; grade: Grade; color: number }>()
 
@@ -132,9 +146,7 @@ export class Playfield {
     g.moveTo(SQ_RIGHT, SQ_TOP + a).lineTo(SQ_RIGHT, SQ_BOTTOM - a)
     g.stroke({ width: 4, color: p.click, alpha: 0.9 })
 
-    g.moveTo(SQ_LEFT + a, SQ_TOP).lineTo(SQ_RIGHT - a, SQ_TOP)
-    g.moveTo(SQ_LEFT + a, SQ_BOTTOM).lineTo(SQ_RIGHT - a, SQ_BOTTOM)
-    g.stroke({ width: 4, color: p.scroll, alpha: 0.9 })
+    // 위아래 변은 판정선이 아니다 (스크롤을 쓰지 않는다). 윤곽만 남긴다.
     return g
   }
 
@@ -155,7 +167,7 @@ export class Playfield {
     fill.clear()
 
     // 커서 구역 채움은 윤곽 아래에 깔아야 해서 먼저 모은다.
-    const fills: { cx: number; cy: number; alpha: number }[] = []
+    const fills: { x: number; y: number; alpha: number }[] = []
 
     for (let i = head; i < notes.length; i++) {
       const s = notes[i]!
@@ -165,35 +177,61 @@ export class Playfield {
 
       if (s.note.type === 'cursor') {
         if (lead > CURSOR_LEAD_MS) continue
-        const b = targetOf(s.note)
+        const c = fieldToStage(s.note.x, s.note.y)
         const u = Math.max(0, lead) / CURSOR_LEAD_MS
-        const size = CELL * (1 + (CURSOR_SCALE - 1) * u)
-        g.roundRect(b.cx - size / 2, b.cy - size / 2, size, size, radiusOf(size))
+        const base = HIT_RADIUS * 2
+        const size = base * (1 + (CURSOR_SCALE - 1) * u)
+        g.roundRect(c.x - size / 2, c.y - size / 2, size, size, radiusOf(size))
         g.stroke({ width: 3, color: p.cursor, alpha: Math.min(1, (1 - u) * 2.2) })
         if (lead < CURSOR_FILL_MS)
-          fills.push({ cx: b.cx, cy: b.cy, alpha: 0.3 * (1 - Math.max(0, lead) / CURSOR_FILL_MS) })
+          fills.push({ x: c.x, y: c.y, alpha: 0.3 * (1 - Math.max(0, lead) / CURSOR_FILL_MS) })
         continue
       }
 
-      // 이산 노트: 바깥에서 밀려와 앞면이 변에 닿는다.
+      // 클릭 노트: 바깥에서 밀려와 앞면이 변에 닿는다.
       const lane = LANES[laneOf(s.note)!]
       const u = Math.max(0, lead) / LANE_LEAD_MS
       const b = laneBox(lane, u)
-      lanes.roundRect(b.cx - b.size / 2, b.cy - b.size / 2, b.size, b.size, radiusOf(b.size))
-      lanes.fill({ color: lane.tone === 'click' ? p.click : p.scroll, alpha: 0.9 })
+      lanes.roundRect(b.x - b.size / 2, b.y - b.size / 2, b.size, b.size, radiusOf(b.size))
+      lanes.fill({ color: p.click, alpha: 0.9 })
     }
 
-    for (const { cx, cy, alpha } of fills) {
-      fill.roundRect(cx - CELL / 2, cy - CELL / 2, CELL, CELL, radiusOf(CELL))
+    const hitSize = HIT_RADIUS * 2
+    for (const { x, y, alpha } of fills) {
+      fill.roundRect(x - HIT_RADIUS, y - HIT_RADIUS, hitSize, hitSize, radiusOf(hitSize))
       fill.fill({ color: p.cursor, alpha })
     }
     this.#drawFlash(songMs)
 
     // 커서. 위치 판정의 주체라 항상 보여야 한다.
+    const shown = this.#lagged(songMs, cursor)
     const c = this.#cursor
     c.clear()
-    c.roundRect(cursor.x - 20, cursor.y - 20, 40, 40, radiusOf(40))
+    c.roundRect(shown.x - 20, shown.y - 20, 40, 40, radiusOf(40))
     c.fill({ color: p.cursor, alpha: 0.9 })
+  }
+
+  /** 진행 반대 방향으로 끌린 커서 위치. 보이는 것만 늦고 판정은 진짜 좌표로 한다. */
+  #lagged(songMs: number, cursor: { x: number; y: number }): { x: number; y: number } {
+    const prev = this.#prevCursor
+    const dt = Math.min(0.1, Math.max(0.001, (songMs - this.#prevMs) / 1000))
+    this.#prevMs = songMs
+    this.#prevCursor = { x: cursor.x, y: cursor.y }
+    if (!prev) return cursor
+
+    const vx = (cursor.x - prev.x) / dt
+    const vy = (cursor.y - prev.y) / dt
+    let tx = -vx * LAG_PER_PX_PER_SEC
+    let ty = -vy * LAG_PER_PX_PER_SEC
+    const len = Math.hypot(tx, ty)
+    if (len > LAG_MAX_PX) {
+      tx = (tx / len) * LAG_MAX_PX
+      ty = (ty / len) * LAG_MAX_PX
+    }
+    const k = 1 - Math.exp(-dt / LAG_TAU)
+    this.#lag.x += (tx - this.#lag.x) * k
+    this.#lag.y += (ty - this.#lag.y) * k
+    return { x: cursor.x + this.#lag.x, y: cursor.y + this.#lag.y }
   }
 
   /** 판정 직후 그 자리를 번쩍인다. 맞았는지 즉시 알아야 한다. */
@@ -205,7 +243,7 @@ export class Playfield {
         : grade === 'perfect'
           ? this.#palette.bone
           : this.#palette.cursor
-    this.#glow.set(`${b.cx},${b.cy},${b.size}`, { until: songMs + AFTERGLOW_MS, grade, color })
+    this.#glow.set(`${b.x},${b.y},${b.size}`, { until: songMs + AFTERGLOW_MS, grade, color })
   }
 
   #drawFlash(songMs: number): void {

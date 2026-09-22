@@ -12,7 +12,7 @@
   import { InputCollector } from '$lib/game/input'
   import { Playfield } from '$lib/game/render'
   import { kindOf, Session } from '$lib/game/session'
-  import { cellBox } from '$lib/game/layout'
+  import { fieldToStage } from '$lib/game/layout'
   import type { Grade } from '$lib/game/judge'
   import Keycap from '$lib/ui/Keycap.svelte'
 
@@ -103,8 +103,8 @@
             const note = chart.notes[autoAt]!
             autoAt++
             if (note.type === 'cursor') {
-              const b = cellBox(note.x, note.y)
-              input.injectCursor(note.t, b.cx, b.cy)
+              const p = fieldToStage(note.x, note.y)
+              input.injectCursor(note.t, p.x, p.y)
             } else {
               input.inject(kindOf(note)!, note.t)
             }
@@ -201,8 +201,7 @@
   {/if}
 
   <footer>
-    <Keycap label="Z" /><Keycap label="X" /> click ·
-    <Keycap label="W" /><Keycap label="S" /> scroll ·
+    <Keycap label="Z" /><Keycap label="X" /> click · move the cursor onto the marks ·
     <Keycap label="Esc" /> back
   </footer>
 </div>

@@ -13,10 +13,10 @@
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CHART_VERSION, GENERATOR, type Chart, type Note } from '../src/lib/chart.ts'
+import { CHART_VERSION, FIELD_H, FIELD_W, GENERATOR, type Chart, type Note } from '../src/lib/chart.ts'
 import { Session } from '../src/lib/game/session.ts'
-import { MISS_AFTER, WINDOW, type Grade } from '../src/lib/game/judge.ts'
-import { cellBox } from '../src/lib/game/layout.ts'
+import { CURSOR_WINDOW, MISS_AFTER, WINDOW, type Grade } from '../src/lib/game/judge.ts'
+import { fieldToStage, HIT_RADIUS } from '../src/lib/game/layout.ts'
 import type { DiscreteInput, DiscreteKind } from '../src/lib/game/input.ts'
 
 const ROOT = join(import.meta.dirname, '..')
@@ -30,8 +30,10 @@ const kindOf = (n: Note): DiscreteKind | null =>
 interface Play {
   /** 입력 시각 오차(ms). 양수면 늦게 친다. */
   offsetMs?: number
-  /** 커서를 칸 중심에서 얼마나 벗어나게 둘지(px) */
+  /** 커서를 판정 지점에서 얼마나 벗어나게 둘지(화면 px) */
   cursorOff?: number
+  /** 커서 표본을 노트 시각에서 얼마나 밀지(ms) */
+  cursorLateMs?: number
   swapButtons?: boolean
   idle?: boolean
 }
@@ -39,13 +41,15 @@ interface Play {
 /** 60fps 로 곡 전체를 돌린다. 입력은 실제와 같은 경로(이벤트 시각)로 들어간다. */
 function simulate(chart: Chart, play: Play = {}) {
   const session = new Session(chart)
-  const { offsetMs = 0, cursorOff = 0, swapButtons = false, idle = false } = play
+  const { offsetMs = 0, cursorOff = 0, cursorLateMs = 0, swapButtons = false, idle = false } = play
   const samples: { songMs: number; x: number; y: number }[] = []
+  // 실제 InputCollector 는 표본 사이를 보간한다. 여기서는 표본이 노트마다 하나뿐이라
+  // 가장 가까운 것을 쓰되, 5ms 넘게 떨어지면 그 시각엔 표본이 없다고 본다.
   const cursorAt = (ms: number) => {
-    if (!samples.length) return null
-    let best = samples[0]!
-    for (const s of samples) if (Math.abs(s.songMs - ms) < Math.abs(best.songMs - ms)) best = s
-    return { x: best.x, y: best.y }
+    let best: (typeof samples)[number] | null = null
+    for (const s of samples)
+      if (!best || Math.abs(s.songMs - ms) < Math.abs(best.songMs - ms)) best = s
+    return best && Math.abs(best.songMs - ms) <= 5 ? { x: best.x, y: best.y } : null
   }
 
   const last = chart.notes[chart.notes.length - 1]?.t ?? 0
@@ -58,8 +62,8 @@ function simulate(chart: Chart, play: Play = {}) {
       pending++
       if (idle) continue
       if (note.type === 'cursor') {
-        const b = cellBox(note.x, note.y)
-        samples.push({ songMs: note.t, x: b.cx + cursorOff, y: b.cy })
+        const b = fieldToStage(note.x, note.y)
+        samples.push({ songMs: note.t + cursorLateMs, x: b.x + cursorOff, y: b.y })
         if (samples.length > 256) samples.shift()
       } else {
         let kind = kindOf(note)!
@@ -95,12 +99,16 @@ const SPACING = 600
 const synthNotes: Note[] = []
 for (let i = 0; i < 40; i++) {
   const t = 2000 + i * SPACING
-  switch (i % 5) {
-    case 0: synthNotes.push({ t, type: 'cursor', x: i % 3, y: (i >> 1) % 3 }); break
+  switch (i % 3) {
+    case 0:
+      synthNotes.push({
+        t, type: 'cursor',
+        x: Math.round(150 + ((i * 137) % 700)),
+        y: Math.round(120 + ((i * 211) % 510)),
+      })
+      break
     case 1: synthNotes.push({ t, type: 'click', btn: 'L' }); break
-    case 2: synthNotes.push({ t, type: 'click', btn: 'R' }); break
-    case 3: synthNotes.push({ t, type: 'scroll', dir: 'up' }); break
-    default: synthNotes.push({ t, type: 'scroll', dir: 'down' })
+    default: synthNotes.push({ t, type: 'click', btn: 'R' })
   }
 }
 const synth: Chart = {
@@ -110,6 +118,8 @@ const synth: Chart = {
 const synthCursor = synthNotes.filter((n) => n.type === 'cursor').length
 const synthDiscrete = synthNotes.length - synthCursor
 const synthClicks = synthNotes.filter((n) => n.type === 'click').length
+void FIELD_W
+void FIELD_H
 
 console.log(`합성 채보  노트 ${synthNotes.length}개 (커서 ${synthCursor} / 이산 ${synthDiscrete}), 간격 ${SPACING}ms\n`)
 
@@ -131,8 +141,13 @@ for (const off of [0, 500, -500]) {
   const g = tallyBy(simulate(synth, { offsetMs: off }), 'cursor')
   check(g.perfect === synthCursor, `이산 입력이 ${String(off).padStart(5)}ms 어긋나도 커서 ${fmt(g)}`)
 }
-check(tallyBy(simulate(synth, { cursorOff: 60 }), 'cursor').perfect === synthCursor, '칸 안(60px) PERFECT')
-check(tallyBy(simulate(synth, { cursorOff: 80 }), 'cursor').miss === synthCursor, '칸 밖(80px) MISS')
+check(tallyBy(simulate(synth, { cursorOff: HIT_RADIUS - 6 }), 'cursor').perfect === synthCursor, `반경 안(${HIT_RADIUS - 6}px) PERFECT`)
+check(tallyBy(simulate(synth, { cursorOff: HIT_RADIUS + 6 }), 'cursor').miss === synthCursor, `반경 밖(${HIT_RADIUS + 6}px) MISS`)
+console.log('\n커서 판정 창')
+for (const [late, want] of [[CURSOR_WINDOW - 8, 'perfect'], [CURSOR_WINDOW + 20, 'miss']] as const) {
+  const g = tallyBy(simulate(synth, { cursorLateMs: late }), 'cursor')
+  check(g[want] === synthCursor, `커서가 ${late}ms 늦게 지나가면 ${want.padEnd(7)} ${fmt(g)}`)
+}
 
 console.log('\n잘못된 입력')
 const swapped = tallyBy(simulate(synth, { swapButtons: true }), 'discrete')
