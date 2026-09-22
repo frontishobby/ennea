@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { coverUrl } from '$lib/paths'
   import {
     DIFFICULTIES,
@@ -11,6 +11,7 @@
   } from '$lib/songs'
   import { hueOf } from '$lib/design/hue'
   import { bestFor } from '$lib/records'
+  import { preview } from '$lib/audio/preview.svelte'
   import { spring } from '$lib/motion.svelte'
   import { createWheelTicker } from '$lib/input/wheel'
   import { go } from '$lib/router.svelte'
@@ -19,7 +20,6 @@
   import Stat from '$lib/ui/Stat.svelte'
 
   let songs = $state<Song[]>([])
-  let placeholderLibrary = $state(false)
   let failure = $state<string | null>(null)
   let loading = $state(true)
 
@@ -31,9 +31,7 @@
 
   onMount(async () => {
     try {
-      const library = await loadSongIndex()
-      songs = library.songs
-      placeholderLibrary = library.placeholder ?? false
+      songs = (await loadSongIndex()).songs
     } catch (e) {
       failure = e instanceof Error ? e.message : String(e)
     } finally {
@@ -42,6 +40,9 @@
   })
 
   const song = $derived(songs[index])
+  // 곡이 바뀌면 미리듣기를 새로 요청한다. 캐러셀을 빠르게 넘기는 동안은 받지 않는다.
+  $effect(() => preview.request(song))
+  onDestroy(() => preview.stop())
   const chart = $derived(song ? nearestChart(song, tier) : null)
   const best = $derived(chart ? bestFor(chart.chartHash) : null)
   const hue = $derived(song ? hueOf(song.slug) : 262)
@@ -96,6 +97,7 @@
   }
 
   function onKey(event: KeyboardEvent) {
+    preview.arm()
     switch (event.key) {
       case 'ArrowLeft':
       case 'a':
@@ -128,6 +130,7 @@
   function browseOnWheel(node: HTMLElement) {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
+      preview.arm()
       ticker(event)
     }
     node.addEventListener('wheel', onWheel, { passive: false })
@@ -194,16 +197,20 @@
           style:z-index={p.z}
           style:pointer-events={p.opacity < 0.2 ? 'none' : 'auto'}
           tabindex={Math.abs(shortest(i - index)) > 2 ? -1 : 0}
-          onclick={() => (i === index ? play() : jumpTo(i))}
+          onclick={() => {
+            preview.arm()
+            if (i === index) play()
+            else jumpTo(i)
+          }}
         >
-          <img src={coverUrl(entry.slug)} alt="" draggable="false" />
+          <img src={coverUrl(entry.slug, entry.cover)} alt="" draggable="false" />
           <span class="sr">{i === index ? `Play ${entry.title}` : `Select ${entry.title}`}</span>
         </button>
       {/each}
     </div>
 
     <div class="titles" aria-live="polite">
-      <h1>{song.title}</h1>
+      <h1 class:fetching={preview.loading === song.slug}>{song.title}</h1>
       <p class="artist">{song.artist}</p>
     </div>
 
@@ -251,8 +258,10 @@
       <span class="hint"><Keycap label="A" /><Keycap label="D" /> browse</span>
       <span class="hint"><Keycap label="W" /><Keycap label="S" /> difficulty</span>
       <span class="hint"><Keycap label="Enter" /> play</span>
-      {#if placeholderLibrary}
-        <span class="notice">Placeholder library — no audio is wired up yet</span>
+      {#if song.placeholder}
+        <span class="notice">Placeholder — no audio for this song yet</span>
+      {:else if preview.failed === song.slug}
+        <span class="notice">Couldn't load the preview</span>
       {/if}
     </footer>
   {/if}
@@ -396,6 +405,12 @@
     font-weight: 800;
     line-height: 1.05;
     letter-spacing: -0.028em;
+    transition: color 200ms ease;
+  }
+
+  /* 음원을 받는 동안. 미리듣기가 시작되면 원래 색으로 돌아온다. */
+  h1.fetching {
+    color: var(--bone-faint);
   }
 
   .artist {

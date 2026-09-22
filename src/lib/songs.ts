@@ -23,12 +23,14 @@ export interface Song {
   previewStartMs: number
   audioOffsetMs: number
   charts: ChartRef[]
+  /** 음원·채보가 아직 없는 자리표시자. 미리듣기를 시도하지 않는다. */
+  placeholder?: boolean
+  /** 자켓 파일명. 기본은 cover.webp (PLAN §8). */
+  cover?: string
 }
 
 export interface SongIndex {
   version: number
-  /** Set while the library is stand-in data with no audio behind it. */
-  placeholder?: boolean
   songs: Song[]
 }
 

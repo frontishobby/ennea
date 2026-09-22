@@ -8,9 +8,9 @@ export const CHART_BASE_URL = import.meta.env.BASE_URL + 'charts/'
 
 export const SONG_INDEX_URL = import.meta.env.BASE_URL + 'songs.json'
 
-/** Placeholder jackets are SVG; real cover art will be cover.webp. */
-const COVER_FILE = 'cover.svg'
+/** PLAN §8. 자리표시자만 songs.json 에서 cover.svg 로 덮어쓴다. */
+export const DEFAULT_COVER = 'cover.webp'
 
-export const coverUrl = (slug: string) => `${AUDIO_BASE_URL}${slug}/${COVER_FILE}`
+export const coverUrl = (slug: string, cover = DEFAULT_COVER) => `${AUDIO_BASE_URL}${slug}/${cover}`
 export const audioUrl = (slug: string) => `${AUDIO_BASE_URL}${slug}/audio.webm`
 export const chartUrl = (chartHash: string) => `${CHART_BASE_URL}${chartHash}.json`

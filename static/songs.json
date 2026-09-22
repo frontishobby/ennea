@@ -1,8 +1,38 @@
 {
   "version": 1,
-  "_note": "Placeholder entries. No audio or chart files exist for these yet — they are here so the song select has something to lay out. Replaced for real at M8.",
-  "placeholder": true,
+  "_note": "placeholder: true 인 항목은 음원·채보가 없는 자리표시자다 — 곡 선택 화면 레이아웃용. M8 에서 교체한다. 그 표시가 없는 곡은 실제 음원(audio.webm)과 채보가 있다.",
   "songs": [
+    {
+      "slug": "prism",
+      "title": "Prism",
+      "artist": "frontishobby",
+      "license": "CC0-1.0",
+      "sourceUrl": "",
+      "durationMs": 127988,
+      "bpm": 171,
+      "previewStartMs": 69000,
+      "audioOffsetMs": 0,
+      "charts": [
+        {
+          "difficulty": "easy",
+          "chartHash": "e763cf51e8fd5061",
+          "noteCount": 313,
+          "level": 5
+        },
+        {
+          "difficulty": "normal",
+          "chartHash": "e6e1f7a00f37fb43",
+          "noteCount": 599,
+          "level": 8
+        },
+        {
+          "difficulty": "hard",
+          "chartHash": "6b52b85ea6041402",
+          "noteCount": 1153,
+          "level": 10
+        }
+      ]
+    },
     {
       "slug": "neon-drift",
       "title": "Neon Drift",
@@ -32,7 +62,9 @@
           "noteCount": 1072,
           "level": 8
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "paper-lanterns",
@@ -63,7 +95,9 @@
           "noteCount": 758,
           "level": 6
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "static-bloom",
@@ -94,7 +128,9 @@
           "noteCount": 1302,
           "level": 9
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "halogen",
@@ -119,7 +155,9 @@
           "noteCount": 1043,
           "level": 8
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "tidal-lock",
@@ -150,7 +188,9 @@
           "noteCount": 1718,
           "level": 10
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "cobalt-rain",
@@ -181,7 +221,9 @@
           "noteCount": 1127,
           "level": 7
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "midnight-arcade",
@@ -212,7 +254,9 @@
           "noteCount": 1125,
           "level": 8
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     },
     {
       "slug": "velvet-circuit",
@@ -237,7 +281,9 @@
           "noteCount": 1011,
           "level": 9
         }
-      ]
+      ],
+      "placeholder": true,
+      "cover": "cover.svg"
     }
   ]
 }
