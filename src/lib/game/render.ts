@@ -11,6 +11,7 @@ import { Application, Container, Graphics } from 'pixi.js'
 import { tokenColor } from '../design/theme.ts'
 import type { Grade } from './judge.ts'
 import {
+  CURSOR_RADIUS,
   fieldToStage,
   HIT_RADIUS,
   laneBox,
@@ -191,10 +192,11 @@ export class Playfield {
     this.#drawFlash(songMs)
 
     // 커서는 진짜 좌표 그대로. 판정의 주체라 여기가 거짓말하면 안 된다.
+    // 유일한 원이다 — 나머지가 전부 둥근 정사각형이라 이것만으로 구분된다.
     const c = this.#cursor
     c.clear()
-    c.roundRect(cursor.x - 20, cursor.y - 20, 40, 40, radiusOf(40))
-    c.fill({ color: p.cursor, alpha: 0.9 })
+    c.circle(cursor.x, cursor.y, CURSOR_RADIUS)
+    c.fill({ color: p.cursor, alpha: 0.95 })
   }
 
   /** 판정 직후 그 자리를 번쩍인다. 맞았는지 즉시 알아야 한다. */

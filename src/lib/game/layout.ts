@@ -16,7 +16,7 @@ import { FIELD_H, FIELD_W, type Note } from '../chart.ts'
 export const STAGE_W = 1280
 export const STAGE_H = 720
 
-export const SQUARE = 680
+export const SQUARE = 560
 export const SQ_LEFT = (STAGE_W - SQUARE) / 2
 export const SQ_TOP = (STAGE_H - SQUARE) / 2
 export const SQ_RIGHT = SQ_LEFT + SQUARE
@@ -47,10 +47,17 @@ export const fieldToStage = (x: number, y: number): Point => ({
 })
 
 /**
- * 커서 판정 반경(화면 px). osu! CS4 서클이 필드 단위로 약 71 이라 그보다 넉넉하다 —
- * osu 는 **내가 클릭하는 순간**을 고르지만 여기는 시각이 정해져 있어 더 가혹하기 때문이다.
+ * 커서 판정 반경. **필드 단위**로 정의한다 — 화면 px 로 박아두면 정사각형 크기를 바꿀
+ * 때마다 난이도가 같이 바뀐다.
+ *
+ * osu! CS4 서클이 필드 단위로 약 71 이라 그보다 넉넉하다 — osu 는 **내가 클릭하는 순간**을
+ * 고르지만 여기는 시각이 정해져 있어 더 가혹하기 때문이다.
  */
-export const HIT_RADIUS = 62
+export const HIT_RADIUS_FIELD = 91
+export const HIT_RADIUS = HIT_RADIUS_FIELD * FIELD_SCALE
+
+/** 커서 자체의 반지름(화면 px). 게임 세계는 전부 둥근 정사각형이고 플레이어만 원이다. */
+export const CURSOR_RADIUS = 15
 
 export type LaneKey = 'clickL' | 'clickR'
 
