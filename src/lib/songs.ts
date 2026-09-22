@@ -15,7 +15,6 @@ export interface ChartRef {
 export interface Song {
   slug: string
   title: string
-  artist: string
   license: string
   sourceUrl: string
   durationMs: number

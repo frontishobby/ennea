@@ -211,7 +211,6 @@
 
     <div class="titles" aria-live="polite">
       <h1 class:fetching={preview.loading === song.slug}>{song.title}</h1>
-      <p class="artist">{song.artist}</p>
     </div>
 
     <div class="band">
@@ -393,7 +392,7 @@
 
   .titles {
     position: absolute;
-    top: 440px;
+    top: 464px;
     left: 0;
     right: 0;
     text-align: center;
@@ -411,13 +410,6 @@
   /* 음원을 받는 동안. 미리듣기가 시작되면 원래 색으로 돌아온다. */
   h1.fetching {
     color: var(--bone-faint);
-  }
-
-  .artist {
-    margin: 7px 0 0;
-    font-size: 17px;
-    font-weight: 400;
-    color: var(--bone-dim);
   }
 
   /* ── Band: two facts, four difficulties, one record ───────── */

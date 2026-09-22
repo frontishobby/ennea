@@ -5,7 +5,6 @@
     {
       "slug": "prism",
       "title": "Prism",
-      "artist": "frontishobby",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 127988,
@@ -36,7 +35,6 @@
     {
       "slug": "neon-drift",
       "title": "Neon Drift",
-      "artist": "Sable Unit",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 183000,
@@ -69,7 +67,6 @@
     {
       "slug": "paper-lanterns",
       "title": "Paper Lanterns",
-      "artist": "Sable Unit",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 164000,
@@ -102,7 +99,6 @@
     {
       "slug": "static-bloom",
       "title": "Static Bloom",
-      "artist": "Molid",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 201000,
@@ -135,7 +131,6 @@
     {
       "slug": "halogen",
       "title": "Halogen",
-      "artist": "Molid",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 178000,
@@ -162,7 +157,6 @@
     {
       "slug": "tidal-lock",
       "title": "Tidal Lock",
-      "artist": "Vantablue",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 242000,
@@ -195,7 +189,6 @@
     {
       "slug": "cobalt-rain",
       "title": "Cobalt Rain",
-      "artist": "Vantablue",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 215000,
@@ -228,7 +221,6 @@
     {
       "slug": "midnight-arcade",
       "title": "Midnight Arcade",
-      "artist": "Kestrel Nine",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 192000,
@@ -261,7 +253,6 @@
     {
       "slug": "velvet-circuit",
       "title": "Velvet Circuit",
-      "artist": "Kestrel Nine",
       "license": "CC0-1.0",
       "sourceUrl": "",
       "durationMs": 156000,

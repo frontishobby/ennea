@@ -26,7 +26,14 @@ class SongPreview {
   /** 받기·재생에 실패한 곡. 조용히 넘어가되 한 번은 알린다. */
   failed = $state<string | null>(null)
 
-  #armed = false
+  /**
+   * 브라우저는 유저 제스처 전에 소리를 막는다. 첫 입력에서 푼다.
+   * $state 여야 한다 — request() 를 부르는 $effect 가 이 값을 읽으므로, 풀리는 순간
+   * 효과가 다시 돌아 **지금 선택된 곡**의 미리듣기가 시작된다. 일반 필드면 곡을 바꿔야만
+   * 시작되고, 첫 입력이 Enter 나 클릭이면 영영 안 난다.
+   */
+  armed = $state(false)
+
   #cache = new Map<string, ArrayBuffer>()
   #el: HTMLAudioElement | null = null
   #url: string | null = null
@@ -34,9 +41,8 @@ class SongPreview {
   #timer: ReturnType<typeof setTimeout> | undefined
   #fade: ReturnType<typeof setInterval> | undefined
 
-  /** 브라우저는 유저 제스처 전에 소리를 막는다. 첫 입력에서 푼다. */
   arm() {
-    this.#armed = true
+    this.armed = true
   }
 
   /** 이미 받아 둔 음원. M1 이 재사용한다 — decodeAudioData 는 버퍼를 떼어가므로 사본을 준다. */
@@ -49,7 +55,7 @@ class SongPreview {
     clearTimeout(this.#timer)
     const token = ++this.#token
     this.#silence()
-    if (!song || song.placeholder || !this.#armed) return
+    if (!song || song.placeholder || !this.armed) return
     this.#timer = setTimeout(() => void this.#start(song, token), delayMs)
   }
 
